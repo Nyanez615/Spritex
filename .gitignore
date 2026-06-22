@@ -23,5 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 
-# Local-only Claude Code guide — never pushed to the public repo
+# Local-only dev-guide files — never pushed to the public repo
 CLAUDE.md
+RESUME_PROMPT.md
