@@ -17,6 +17,7 @@ import type { ChecklistField } from "./bindings/ChecklistField";
 import type { DexGroupBy } from "./bindings/DexGroupBy";
 import type { DexProgressBucket } from "./bindings/DexProgressBucket";
 import type { SyncStatus } from "./bindings/SyncStatus";
+import type { SyncMode } from "./bindings/SyncMode";
 
 export type {
   Pokemon,
@@ -30,6 +31,7 @@ export type {
   DexGroupBy,
   DexProgressBucket,
   SyncStatus,
+  SyncMode,
 };
 
 // ── Defaults for browser-preview mode ────────────────────────────────────────
@@ -65,7 +67,9 @@ export const getPokemonList = (filters: PokedexFilters): Promise<Pokemon[]> =>
   isTauri() ? invoke("get_pokemon_list", { filters }) : Promise.resolve([]);
 
 export const getPokemonDetail = (pokemonId: number, formId: number): Promise<Pokemon> =>
-  invoke("get_pokemon_detail", { pokemonId, formId });
+  isTauri()
+    ? invoke("get_pokemon_detail", { pokemonId, formId })
+    : Promise.reject(new Error("Pokémon detail unavailable in browser preview (no Tauri backend)"));
 
 export const searchPokemon = (query: string): Promise<Pokemon[]> =>
   isTauri() ? invoke("search_pokemon", { query }) : Promise.resolve([]);

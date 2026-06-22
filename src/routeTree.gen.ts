@@ -9,38 +9,188 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TimelineRouteImport } from './routes/timeline'
+import { Route as TableRouteImport } from './routes/table'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as QuickCounterRouteImport } from './routes/quick-counter'
+import { Route as HuntRouteImport } from './routes/hunt'
+import { Route as DexRouteImport } from './routes/dex'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PokemonIdRouteImport } from './routes/pokemon.$id'
+import { Route as GamesGameIdRouteImport } from './routes/games.$gameId'
 
+const TimelineRoute = TimelineRouteImport.update({
+  id: '/timeline',
+  path: '/timeline',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TableRoute = TableRouteImport.update({
+  id: '/table',
+  path: '/table',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QuickCounterRoute = QuickCounterRouteImport.update({
+  id: '/quick-counter',
+  path: '/quick-counter',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HuntRoute = HuntRouteImport.update({
+  id: '/hunt',
+  path: '/hunt',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DexRoute = DexRouteImport.update({
+  id: '/dex',
+  path: '/dex',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PokemonIdRoute = PokemonIdRouteImport.update({
+  id: '/pokemon/$id',
+  path: '/pokemon/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GamesGameIdRoute = GamesGameIdRouteImport.update({
+  id: '/games/$gameId',
+  path: '/games/$gameId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/dex': typeof DexRoute
+  '/hunt': typeof HuntRoute
+  '/quick-counter': typeof QuickCounterRoute
+  '/settings': typeof SettingsRoute
+  '/table': typeof TableRoute
+  '/timeline': typeof TimelineRoute
+  '/games/$gameId': typeof GamesGameIdRoute
+  '/pokemon/$id': typeof PokemonIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/dex': typeof DexRoute
+  '/hunt': typeof HuntRoute
+  '/quick-counter': typeof QuickCounterRoute
+  '/settings': typeof SettingsRoute
+  '/table': typeof TableRoute
+  '/timeline': typeof TimelineRoute
+  '/games/$gameId': typeof GamesGameIdRoute
+  '/pokemon/$id': typeof PokemonIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/dex': typeof DexRoute
+  '/hunt': typeof HuntRoute
+  '/quick-counter': typeof QuickCounterRoute
+  '/settings': typeof SettingsRoute
+  '/table': typeof TableRoute
+  '/timeline': typeof TimelineRoute
+  '/games/$gameId': typeof GamesGameIdRoute
+  '/pokemon/$id': typeof PokemonIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/dex'
+    | '/hunt'
+    | '/quick-counter'
+    | '/settings'
+    | '/table'
+    | '/timeline'
+    | '/games/$gameId'
+    | '/pokemon/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/dex'
+    | '/hunt'
+    | '/quick-counter'
+    | '/settings'
+    | '/table'
+    | '/timeline'
+    | '/games/$gameId'
+    | '/pokemon/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/dex'
+    | '/hunt'
+    | '/quick-counter'
+    | '/settings'
+    | '/table'
+    | '/timeline'
+    | '/games/$gameId'
+    | '/pokemon/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DexRoute: typeof DexRoute
+  HuntRoute: typeof HuntRoute
+  QuickCounterRoute: typeof QuickCounterRoute
+  SettingsRoute: typeof SettingsRoute
+  TableRoute: typeof TableRoute
+  TimelineRoute: typeof TimelineRoute
+  GamesGameIdRoute: typeof GamesGameIdRoute
+  PokemonIdRoute: typeof PokemonIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/timeline': {
+      id: '/timeline'
+      path: '/timeline'
+      fullPath: '/timeline'
+      preLoaderRoute: typeof TimelineRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/table': {
+      id: '/table'
+      path: '/table'
+      fullPath: '/table'
+      preLoaderRoute: typeof TableRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/quick-counter': {
+      id: '/quick-counter'
+      path: '/quick-counter'
+      fullPath: '/quick-counter'
+      preLoaderRoute: typeof QuickCounterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/hunt': {
+      id: '/hunt'
+      path: '/hunt'
+      fullPath: '/hunt'
+      preLoaderRoute: typeof HuntRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dex': {
+      id: '/dex'
+      path: '/dex'
+      fullPath: '/dex'
+      preLoaderRoute: typeof DexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +198,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pokemon/$id': {
+      id: '/pokemon/$id'
+      path: '/pokemon/$id'
+      fullPath: '/pokemon/$id'
+      preLoaderRoute: typeof PokemonIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/games/$gameId': {
+      id: '/games/$gameId'
+      path: '/games/$gameId'
+      fullPath: '/games/$gameId'
+      preLoaderRoute: typeof GamesGameIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DexRoute: DexRoute,
+  HuntRoute: HuntRoute,
+  QuickCounterRoute: QuickCounterRoute,
+  SettingsRoute: SettingsRoute,
+  TableRoute: TableRoute,
+  TimelineRoute: TimelineRoute,
+  GamesGameIdRoute: GamesGameIdRoute,
+  PokemonIdRoute: PokemonIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

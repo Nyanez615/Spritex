@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getPokemonList } from "@/lib/tauri";
 
@@ -28,13 +28,16 @@ function PokedexGrid() {
         )}
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
           {pokemon?.map((p) => (
-            <div
+            <Link
               key={`${p.id}-${p.form_id}`}
-              className="flex flex-col items-center gap-2 rounded-lg border border-border p-4"
+              to="/pokemon/$id"
+              params={{ id: String(p.id) }}
+              search={{ form: p.form_id }}
+              className="flex flex-col items-center gap-2 rounded-lg border border-border p-4 transition-colors hover:bg-muted"
             >
               <img src={p.sprite_url} alt={p.display_name} className="h-16 w-16" />
               <span className="text-sm font-medium text-foreground">{p.display_name}</span>
-            </div>
+            </Link>
           ))}
         </div>
       </div>

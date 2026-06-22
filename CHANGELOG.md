@@ -37,7 +37,21 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Tauri updater plugin configured with a real signing keypair (no paid code-signing — desktop builds ship unsigned, matching the mobile free-provisioning posture)
 - BSL-1.1 license, fan-made disclaimer, and a renaming checklist (`docs/RENAMING.md`)
 
+**UI — all 9 views**
+- Pokémon detail page (`/pokemon/:id`) — sprite/types/gender rate, every shiny method for the species ranked best→worst with odds/boosts/citations and a transfer-required tooltip, plus a collection panel (status, +1/+10/+100 counter, shiny-charm/sandwich/outbreak checklist, mark-as-caught dialog)
+- Data table (`/table`) — sortable/filterable cross-species view scoped to one game at a time (TanStack Table)
+- Browse-by-game (`/games/:gameId`) — card grid of everything huntable in a given game
+- Hunt dashboard (`/hunt`) — every active hunt with inline counters and checklist toggles
+- Living Dex (`/dex`) — shiny-caught progress bars grouped by generation or type
+- Quick Counter (`/quick-counter`) — large-tap-target counter, click between active hunts
+- Settings (`/settings`) — Turso sync setup (connect/force-sync/clear credentials) and PokéAPI/Bulbapedia CC-BY-NC-SA credits
+- Timeline (`/timeline`) — placeholder; the GO Community Day/Mass Outbreak calendar needs its own read model (Phase D), not built yet
+- Shared left-sidebar navigation and a ⌘K command palette (live Pokémon search + view jumps)
+
+### Fixed
+
+- `getPokemonDetail` was missing the `isTauri()` browser-preview guard every other `lib/tauri.ts` wrapper has — it now rejects with a clear message instead of calling `invoke()` outside Tauri
+
 ### Notes
 
-The remaining 8 views' UI (table, games/$gameId, hunt, dex, quick-counter, settings,
-timeline-stretch) aren't built yet — only `/` (the Pokédex grid) is wired to the real data.
+`.github/workflows/` CI and a frontend test runner aren't set up yet.
