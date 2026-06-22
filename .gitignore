@@ -26,3 +26,9 @@ dist-ssr
 # Local-only dev-guide files — never pushed to the public repo
 CLAUDE.md
 RESUME_PROMPT.md
+
+# seed-gen: fetched/scraped intermediates, never committed — only the
+# resulting resources/static.db is. Re-derivable by re-running the pipeline.
+tools/seed-gen/.cache
+tools/seed-gen/out
+src-tauri/resources/.static-db-build-*

@@ -16,7 +16,8 @@ codebase.
 - Surfaces every documented shiny-hunting method for every species across every game it
   appears in (not just the best one), with the optimal method called out visually
 - Species/availability/odds data is fully automated — scraped and derived from PokéAPI
-  and Bulbapedia at build time, never hand-typed (see [docs/](docs/) for the pipeline)
+  and Bulbapedia at build time, never hand-typed (see [tools/seed-gen/](tools/seed-gen/)
+  for the pipeline)
 
 ## Tech stack
 

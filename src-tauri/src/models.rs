@@ -110,6 +110,8 @@ pub enum Method {
     Event,
     GoWild,
     GoCommunityDay,
+    FriendSafari,
+    BrilliantPokemon,
 }
 
 impl Method {
@@ -132,6 +134,8 @@ impl Method {
             Method::Event => "event",
             Method::GoWild => "go_wild",
             Method::GoCommunityDay => "go_community_day",
+            Method::FriendSafari => "friend_safari",
+            Method::BrilliantPokemon => "brilliant_pokemon",
         }
     }
 }
@@ -157,6 +161,8 @@ impl FromStr for Method {
             "event" => Ok(Method::Event),
             "go_wild" => Ok(Method::GoWild),
             "go_community_day" => Ok(Method::GoCommunityDay),
+            "friend_safari" => Ok(Method::FriendSafari),
+            "brilliant_pokemon" => Ok(Method::BrilliantPokemon),
             other => Err(format!("unknown method: {other}")),
         }
     }
@@ -300,4 +306,17 @@ pub struct SyncStatus {
     pub last_synced_at: Option<String>,
     pub is_online: bool,
     pub mode: SyncMode,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn method_friend_safari_and_brilliant_pokemon_round_trip() {
+        assert_eq!(Method::FriendSafari.as_str(), "friend_safari");
+        assert_eq!(Method::from_str("friend_safari"), Ok(Method::FriendSafari));
+        assert_eq!(Method::BrilliantPokemon.as_str(), "brilliant_pokemon");
+        assert_eq!(Method::from_str("brilliant_pokemon"), Ok(Method::BrilliantPokemon));
+    }
 }

@@ -13,10 +13,16 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Tailwind v4 + shadcn/ui (Nova preset, Radix base), dark theme by default
 - TanStack Router (file-based), TanStack Query, TanStack Table, TanStack Virtual, Zustand, cmdk
 
+**Data pipeline**
+- `tools/seed-gen/` — fully automated PokéAPI + Bulbapedia scraping/derivation pipeline (`npm run seed-gen`), replacing the placeholder seed row with real data: 1025 species + regional forms, ~21,700 shiny-hunting method rows
+- Live availability scrape of Bulbapedia's per-species "Game locations" tables, the shiny-lock exclusion list, and dedicated roster pages for Dynamax Adventures (SwSh) and Friend Safari (Gen6 X/Y)
+- Shiny odds for every supported mechanic (Masuda Method, Pokéradar, chain fishing, DexNav, SOS chains, Catch Combo, Mass/Massive Mass Outbreaks, Dynamax Adventures, Friend Safari, Brilliant Pokémon) derived from Bulbapedia's datamined figures, not estimates
+- Pokémon GO is the only game intentionally out of scope (live-service rotation doesn't fit a static per-species fact)
+
 **Data layer**
 - Static reference schema (`pokemon`, `shiny_methods`) bundled read-only as a Tauri resource — identical for every install, never synced
 - Synced schema (`collection`) — personal hunt progress, UUID PK + soft-delete pattern, applied against a libSQL embedded replica
-- `Game` (20 variants) and `Method` (17 variants) enums with stable string serialization for SQLite storage, kept in sync with their serde/TS wire format
+- `Game` (20 variants) and `Method` (19 variants) enums with stable string serialization for SQLite storage, kept in sync with their serde/TS wire format
 
 **Rust command layer**
 - `commands/pokedex.rs` — `get_pokemon_list`, `get_pokemon_detail`, `search_pokemon`
@@ -33,6 +39,5 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Notes
 
-No species/odds data is seeded yet — `tools/seed-gen/` (the automated PokéAPI + Bulbapedia
-scraping pipeline) has not been built. A single placeholder row exists in `resources/static.db`
-to exercise the command layer.
+The remaining 8 views' UI (table, games/$gameId, hunt, dex, quick-counter, settings,
+timeline-stretch) aren't built yet — only `/` (the Pokédex grid) is wired to the real data.

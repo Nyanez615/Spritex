@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "seed-gen": "tsx tools/seed-gen/src/runAll.ts",
+    "seed-gen:test": "node --import tsx --test tools/seed-gen/test/*.test.ts"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
@@ -36,9 +38,11 @@
     "@tanstack/router-devtools": "^1.167.0",
     "@tanstack/router-plugin": "^1.168.18",
     "@tauri-apps/cli": "^2",
+    "@types/node": "^26.0.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.2",
+    "tsx": "^4.22.4",
     "typescript": "~5.8.3",
     "vite": "^8.0.16"
   }
