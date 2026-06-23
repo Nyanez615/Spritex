@@ -11,7 +11,14 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   // tanstackRouter must run before the react plugin — it generates routeTree.gen.ts
   // from src/routes/ before React's compiler/transform sees the generated import.
-  plugins: [tanstackRouter({ target: "react", autoCodeSplitting: true }), react(), tailwindcss()],
+  plugins: [
+    // Co-located test files (e.g. routes/index.test.tsx) live alongside
+    // their route under src/routes/ — exclude them from route-tree
+    // generation so they're not treated as candidate routes.
+    tanstackRouter({ target: "react", autoCodeSplitting: true, routeFileIgnorePattern: "\\.test\\.tsx?$" }),
+    react(),
+    tailwindcss(),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

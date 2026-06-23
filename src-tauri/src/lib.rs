@@ -1,6 +1,8 @@
 mod commands;
 mod db;
 mod models;
+#[cfg(test)]
+mod test_support;
 
 use db::AppState;
 use std::sync::{Arc, Mutex};

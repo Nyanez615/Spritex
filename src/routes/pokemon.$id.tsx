@@ -1,7 +1,13 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, RotateCcw } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  RotateCcw,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,6 +19,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -22,10 +30,42 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { errorMessage, formatGenderRate, formatOdds, parseJsonArray } from "@/lib/format";
-import { GAME_LABELS, METHOD_LABELS, POKEMON_COLOR_HEX, TYPE_COLORS, humanize } from "@/lib/labels";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  RequireSync,
+  SyncRequiredNotice,
+} from "@/components/SyncRequiredNotice";
+import { useSyncStatus } from "@/hooks/useSyncStatus";
+import {
+  errorMessage,
+  formatGenderRate,
+  formatOdds,
+  parseJsonArray,
+} from "@/lib/format";
+import {
+  GAME_LABELS,
+  METHOD_LABELS,
+  POKEMON_COLOR_HEX,
+  TYPE_COLORS,
+  humanize,
+} from "@/lib/labels";
 import { invalidateCollectionAggregates, queryKeys } from "@/lib/queryKeys";
+import {
+  computeAllStats,
+  DEFAULT_SIMULATOR_INPUTS,
+  isDefaultSimulatorInputs,
+  NATURES,
+  STAT_KEYS,
+  type Nature,
+  type SimulatorInputs,
+  type StatKey,
+  type StatModifierAbility,
+  type StatModifierItem,
+} from "@/lib/statCalc";
 import {
   getCollectionEntry,
   getMethodsForPokemon,
@@ -49,17 +89,32 @@ export const Route = createFileRoute("/pokemon/$id")({
   }),
 });
 
-const STATUS_LABELS: Record<CollectionStatus, string> = {
+export const STATUS_LABELS: Record<CollectionStatus, string> = {
   not_started: "Not started",
   hunting: "Hunting",
   caught: "Caught",
 };
-const ALL_STATUSES: CollectionStatus[] = ["not_started", "hunting", "caught"];
-const FALLBACK_ERROR = "Couldn't load this Pokémon — it may not exist in the static database.";
+export const ALL_STATUSES: CollectionStatus[] = [
+  "not_started",
+  "hunting",
+  "caught",
+];
+const FALLBACK_ERROR =
+  "Couldn't load this Pokémon — it may not exist in the static database.";
 
 function PokemonDetail() {
+  // Keyed on the route's own params so every piece of local state below
+  // (gallery index, stat-simulator inputs) resets when navigating from one
+  // Pokémon's detail page to another — TanStack Router reuses this
+  // component instance across param changes, the same way React Router
+  // does, so without a key change React would otherwise carry over state
+  // (e.g. a held-item choice) onto an unrelated species.
   const { id } = Route.useParams();
   const { form } = Route.useSearch();
+  return <PokemonDetailContent key={`${id}-${form}`} id={id} form={form} />;
+}
+
+function PokemonDetailContent({ id, form }: { id: string; form: number }) {
   const pokemonId = Number(id);
   const formId = form;
   const queryClient = useQueryClient();
@@ -78,22 +133,31 @@ function PokemonDetail() {
     queryFn: () => getMethodsForPokemon(pokemonId, formId),
   });
 
+  const { isConfigured: isSyncConfigured, isLoading: syncLoading } =
+    useSyncStatus();
+
   const { data: entry } = useQuery({
     queryKey: queryKeys.collectionEntry(pokemonId, formId),
     queryFn: () => getCollectionEntry(pokemonId, formId),
+    enabled: isSyncConfigured,
   });
 
   const onMutationSuccess = (data: CollectionEntry) => {
-    queryClient.setQueryData(queryKeys.collectionEntry(pokemonId, formId), data);
+    queryClient.setQueryData(
+      queryKeys.collectionEntry(pokemonId, formId),
+      data,
+    );
     invalidateCollectionAggregates(queryClient);
   };
 
   const statusMutation = useMutation({
-    mutationFn: (status: CollectionStatus) => updateStatus(pokemonId, formId, status),
+    mutationFn: (status: CollectionStatus) =>
+      updateStatus(pokemonId, formId, status),
     onSuccess: onMutationSuccess,
   });
   const counterMutation = useMutation({
-    mutationFn: (amount: 1 | 10 | 100) => incrementCounter(pokemonId, formId, amount),
+    mutationFn: (amount: 1 | 10 | 100) =>
+      incrementCounter(pokemonId, formId, amount),
     onSuccess: onMutationSuccess,
   });
   const checklistMutation = useMutation({
@@ -106,10 +170,17 @@ function PokemonDetail() {
     onSuccess: onMutationSuccess,
   });
   const caughtMutation = useMutation({
-    mutationFn: ({ method, isShiny }: { method: ShinyMethod; isShiny: boolean }) =>
-      markCaught(pokemonId, formId, isShiny, method.game, method.method),
+    mutationFn: ({
+      method,
+      isShiny,
+    }: {
+      method: ShinyMethod;
+      isShiny: boolean;
+    }) => markCaught(pokemonId, formId, isShiny, method.game, method.method),
     onSuccess: onMutationSuccess,
   });
+
+  const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
 
   if (isLoading) {
     return <CenteredMessage text="Loading…" />;
@@ -119,7 +190,22 @@ function PokemonDetail() {
   }
 
   const types = parseJsonArray(pokemon.types);
-  const hasGenderSprites = Boolean(pokemon.sprite_url_female || pokemon.shiny_sprite_url_female);
+  const hasGenderSprites = Boolean(
+    pokemon.sprite_url_female || pokemon.shiny_sprite_url_female,
+  );
+  const spriteVariants: SpriteVariant[] = [
+    { src: pokemon.sprite_url, label: hasGenderSprites ? "Male" : "Standard" },
+    {
+      src: pokemon.shiny_sprite_url,
+      label: hasGenderSprites ? "Shiny Male" : "Shiny",
+    },
+    ...(pokemon.sprite_url_female
+      ? [{ src: pokemon.sprite_url_female, label: "Female" }]
+      : []),
+    ...(pokemon.shiny_sprite_url_female
+      ? [{ src: pokemon.shiny_sprite_url_female, label: "Shiny Female" }]
+      : []),
+  ];
 
   return (
     <div className="flex flex-col h-full w-full">
@@ -129,28 +215,44 @@ function PokemonDetail() {
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
-        <h1 className="text-base font-semibold text-foreground">{pokemon.display_name}</h1>
-        {pokemon.form_name && <Badge variant="outline">{pokemon.form_name}</Badge>}
-        <span className="text-sm text-muted-foreground">#{String(pokemon.id).padStart(4, "0")}</span>
+        <h1 className="text-base font-semibold text-foreground">
+          {pokemon.display_name}
+        </h1>
+        {pokemon.form_name && (
+          <Badge variant="outline">{pokemon.form_name}</Badge>
+        )}
+        <span className="text-sm text-muted-foreground">
+          #{String(pokemon.id).padStart(4, "0")}
+        </span>
       </div>
       <div className="flex-1 overflow-auto p-6 space-y-6">
         <div className="flex gap-6">
           <div className="flex gap-4 flex-wrap">
-            <SpriteBlock src={pokemon.sprite_url} label={hasGenderSprites ? "Male" : "Standard"} />
-            <SpriteBlock src={pokemon.shiny_sprite_url} label={hasGenderSprites ? "Shiny Male" : "Shiny"} />
-            {pokemon.sprite_url_female && <SpriteBlock src={pokemon.sprite_url_female} label="Female" />}
-            {pokemon.shiny_sprite_url_female && (
-              <SpriteBlock src={pokemon.shiny_sprite_url_female} label="Shiny Female" />
-            )}
+            {spriteVariants.map((variant, i) => (
+              <SpriteBlock
+                key={variant.label}
+                src={variant.src}
+                label={variant.label}
+                onClick={() => setGalleryIndex(i)}
+              />
+            ))}
           </div>
           <div className="flex flex-col gap-2 justify-center">
             <div className="flex gap-1.5 flex-wrap">
-              {pokemon.is_legendary && <Badge variant="outline">Legendary</Badge>}
+              {pokemon.is_legendary && (
+                <Badge variant="outline">Legendary</Badge>
+              )}
               {pokemon.is_mythical && <Badge variant="outline">Mythical</Badge>}
               {pokemon.is_baby && <Badge variant="outline">Baby</Badge>}
-              <Badge variant="outline">{pokemon.is_final_evolution ? "Final Evolution" : "Not Fully Evolved"}</Badge>
+              <Badge variant="outline">
+                {pokemon.is_final_evolution
+                  ? "Final Evolution"
+                  : "Not Fully Evolved"}
+              </Badge>
             </div>
-            <p className="text-sm text-muted-foreground">Generation {pokemon.generation}</p>
+            <p className="text-sm text-muted-foreground">
+              Generation {pokemon.generation}
+            </p>
           </div>
         </div>
 
@@ -162,28 +264,44 @@ function PokemonDetail() {
 
         <StatsSection pokemon={pokemon} />
 
-        <Separator />
-
-        {entry && (
-          <CollectionPanel
-            entry={entry}
-            methods={methods ?? []}
-            onStatusChange={(s) => statusMutation.mutate(s)}
-            onCounter={(amount) => counterMutation.mutate(amount)}
-            onChecklist={(field, value) => checklistMutation.mutate({ field, value })}
-            onReset={() => resetMutation.mutate()}
-            onMarkCaught={(method, isShiny) => caughtMutation.mutate({ method, isShiny })}
-          />
+        {!syncLoading && (
+          <>
+            <Separator />
+            <RequireSync
+              isConfigured={isSyncConfigured}
+              isLoading={false}
+              fullPage={false}
+            >
+              {entry ? (
+                <CollectionPanel
+                  entry={entry}
+                  methods={methods ?? []}
+                  onStatusChange={(s) => statusMutation.mutate(s)}
+                  onCounter={(amount) => counterMutation.mutate(amount)}
+                  onChecklist={(field, value) =>
+                    checklistMutation.mutate({ field, value })
+                  }
+                  onReset={() => resetMutation.mutate()}
+                  onMarkCaught={(method, isShiny) =>
+                    caughtMutation.mutate({ method, isShiny })
+                  }
+                />
+              ) : (
+                <SyncRequiredNotice />
+              )}
+            </RequireSync>
+          </>
         )}
 
-        <Separator />
-
         <div>
-          <h2 className="text-sm font-semibold text-foreground mb-3">Shiny methods</h2>
+          <h2 className="text-sm font-semibold text-foreground mb-3">
+            Shiny Methods
+          </h2>
           {methods && methods.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              No shiny methods recorded — every game this species appears in is shiny-locked
-              there, or availability isn't confirmed yet (source pending).
+              No shiny methods recorded — every game this species appears in is
+              shiny-locked there, or availability isn't confirmed yet (source
+              pending).
             </p>
           )}
           <div className="space-y-2">
@@ -193,6 +311,12 @@ function PokemonDetail() {
           </div>
         </div>
       </div>
+      <SpriteGalleryDialog
+        variants={spriteVariants}
+        index={galleryIndex}
+        onIndexChange={setGalleryIndex}
+        onClose={() => setGalleryIndex(null)}
+      />
     </div>
   );
 }
@@ -205,14 +329,103 @@ function CenteredMessage({ text }: { text: string }) {
   );
 }
 
-function SpriteBlock({ src, label }: { src: string; label: string }) {
+interface SpriteVariant {
+  src: string;
+  label: string;
+}
+
+function SpriteBlock({
+  src,
+  label,
+  onClick,
+}: {
+  src: string;
+  label: string;
+  onClick: () => void;
+}) {
   return (
-    <div className="flex flex-col items-center gap-1">
-      <div className="rounded-lg border border-border bg-muted/30 p-3">
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col items-center gap-1 group"
+    >
+      <div className="rounded-lg border border-border bg-muted/30 p-3 transition-colors group-hover:border-primary/50">
         <img src={src} alt={label} className="h-20 w-20" />
       </div>
       <span className="text-xs text-muted-foreground">{label}</span>
-    </div>
+    </button>
+  );
+}
+
+/** Click any sprite to open this — a shared lightbox cycling through every variant present for the species (2 for most, 4 when gender-difference sprites exist). */
+export function SpriteGalleryDialog({
+  variants,
+  index,
+  onIndexChange,
+  onClose,
+}: {
+  variants: SpriteVariant[];
+  index: number | null;
+  onIndexChange: (index: number) => void;
+  onClose: () => void;
+}) {
+  const open = index !== null;
+  const current = index !== null ? variants[index] : null;
+
+  useEffect(() => {
+    if (!open || variants.length < 2) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "ArrowLeft")
+        onIndexChange(((index ?? 0) - 1 + variants.length) % variants.length);
+      if (e.key === "ArrowRight")
+        onIndexChange(((index ?? 0) + 1) % variants.length);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, index, variants.length, onIndexChange]);
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{current?.label}</DialogTitle>
+        </DialogHeader>
+        <div className="flex items-center justify-center gap-3">
+          {variants.length > 1 && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() =>
+                onIndexChange(
+                  ((index ?? 0) - 1 + variants.length) % variants.length,
+                )
+              }
+            >
+              <ChevronLeft className="size-5" />
+            </Button>
+          )}
+          {current && (
+            <img src={current.src} alt={current.label} className="h-48 w-48" />
+          )}
+          {variants.length > 1 && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() =>
+                onIndexChange(((index ?? 0) + 1) % variants.length)
+              }
+            >
+              <ChevronRight className="size-5" />
+            </Button>
+          )}
+        </div>
+        {variants.length > 1 && (
+          <p className="text-center text-xs text-muted-foreground">
+            {(index ?? 0) + 1} / {variants.length}
+          </p>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -222,14 +435,24 @@ function TypeBadge({ type }: { type: string }) {
     <Badge
       variant="outline"
       className="capitalize"
-      style={color ? { borderColor: `${color}80`, color, backgroundColor: `${color}1a` } : undefined}
+      style={
+        color
+          ? { borderColor: `${color}80`, color, backgroundColor: `${color}1a` }
+          : undefined
+      }
     >
       {type}
     </Badge>
   );
 }
 
-function ProfileField({ label, children }: { label: string; children: React.ReactNode }) {
+function ProfileField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
       <p className="text-xs text-muted-foreground">{label}</p>
@@ -238,7 +461,13 @@ function ProfileField({ label, children }: { label: string; children: React.Reac
   );
 }
 
-function ProfileSection({ pokemon, types }: { pokemon: Pokemon; types: string[] }) {
+function ProfileSection({
+  pokemon,
+  types,
+}: {
+  pokemon: Pokemon;
+  types: string[];
+}) {
   const eggGroups = parseJsonArray(pokemon.egg_groups);
   const abilities = parseJsonArray(pokemon.abilities);
   const colorHex = POKEMON_COLOR_HEX[pokemon.color];
@@ -254,23 +483,42 @@ function ProfileSection({ pokemon, types }: { pokemon: Pokemon; types: string[] 
             ))}
           </div>
         </ProfileField>
-        <ProfileField label="Gender">{formatGenderRate(pokemon.gender_rate)}</ProfileField>
-        <ProfileField label="Height">{(pokemon.height / 10).toFixed(1)} m</ProfileField>
-        <ProfileField label="Weight">{(pokemon.weight / 10).toFixed(1)} kg</ProfileField>
+        <ProfileField label="Gender">
+          {formatGenderRate(pokemon.gender_rate)}
+        </ProfileField>
+        <ProfileField label="Height">
+          {(pokemon.height / 10).toFixed(1)} m
+        </ProfileField>
+        <ProfileField label="Weight">
+          {(pokemon.weight / 10).toFixed(1)} kg
+        </ProfileField>
         <ProfileField label="Color">
           <span className="flex items-center gap-1.5">
             {colorHex && (
-              <span className="size-3 rounded-full border border-border/50 shrink-0" style={{ backgroundColor: colorHex }} />
+              <span
+                className="size-3 rounded-full border border-border/50 shrink-0"
+                style={{ backgroundColor: colorHex }}
+              />
             )}
             {humanize(pokemon.color)}
           </span>
         </ProfileField>
-        <ProfileField label="Shape">{pokemon.shape ? humanize(pokemon.shape) : "—"}</ProfileField>
-        <ProfileField label="Growth Rate">{humanize(pokemon.growth_rate)}</ProfileField>
-        <ProfileField label="Egg Groups">{eggGroups.length > 0 ? eggGroups.map(humanize).join(", ") : "—"}</ProfileField>
+        <ProfileField label="Shape">
+          {pokemon.shape ? humanize(pokemon.shape) : "—"}
+        </ProfileField>
+        <ProfileField label="Growth Rate">
+          {humanize(pokemon.growth_rate)}
+        </ProfileField>
+        <ProfileField label="Egg Groups">
+          {eggGroups.length > 0 ? eggGroups.map(humanize).join(", ") : "—"}
+        </ProfileField>
         <ProfileField label="Capture Rate">{pokemon.capture_rate}</ProfileField>
-        <ProfileField label="Base Happiness">{pokemon.base_happiness}</ProfileField>
-        <ProfileField label="Abilities">{abilities.length > 0 ? abilities.map(humanize).join(", ") : "—"}</ProfileField>
+        <ProfileField label="Base Happiness">
+          {pokemon.base_happiness}
+        </ProfileField>
+        <ProfileField label="Abilities">
+          {abilities.length > 0 ? abilities.map(humanize).join(", ") : "—"}
+        </ProfileField>
       </div>
     </div>
   );
@@ -278,40 +526,268 @@ function ProfileSection({ pokemon, types }: { pokemon: Pokemon; types: string[] 
 
 // Conservative ceiling so bars are visually comparable across species without per-page rescaling.
 const STAT_BAR_MAX = 700;
+const STAT_LABELS: Record<StatKey, string> = {
+  hp: "HP",
+  attack: "Attack",
+  defense: "Defense",
+  special_attack: "Sp. Atk",
+  special_defense: "Sp. Def",
+  speed: "Speed",
+};
+const EV_TOTAL_CAP = 510;
+/** Ability-name keys as PokéAPI spells them (kebab-case) — must match abilities JSON, not the display label. */
+const STAT_ABILITY_NAMES: Record<
+  Exclude<StatModifierAbility, "none">,
+  string
+> = {
+  huge_power: "huge-power",
+  pure_power: "pure-power",
+};
+/** Display labels for STAT_ABILITY_NAMES's keys — underscore-separated, so humanize() (hyphen-only) can't be reused here. */
+const STAT_ABILITY_LABELS: Record<
+  Exclude<StatModifierAbility, "none">,
+  string
+> = {
+  huge_power: "Huge Power",
+  pure_power: "Pure Power",
+};
 
-function StatsSection({ pokemon }: { pokemon: Pokemon }) {
-  const stats: Array<[string, number]> = [
-    ["HP", pokemon.stat_hp],
-    ["Attack", pokemon.stat_attack],
-    ["Defense", pokemon.stat_defense],
-    ["Sp. Atk", pokemon.stat_special_attack],
-    ["Sp. Def", pokemon.stat_special_defense],
-    ["Speed", pokemon.stat_speed],
-  ];
+export function StatsSection({ pokemon }: { pokemon: Pokemon }) {
+  const [showCustomize, setShowCustomize] = useState(false);
+  const [sim, setSim] = useState<SimulatorInputs>(DEFAULT_SIMULATOR_INPUTS);
+
+  const computed = useMemo(() => computeAllStats(pokemon, sim), [pokemon, sim]);
+  const availableAbilities = useMemo(() => {
+    const abilities = parseJsonArray(pokemon.abilities);
+    return (
+      Object.keys(STAT_ABILITY_NAMES) as Array<
+        Exclude<StatModifierAbility, "none">
+      >
+    ).filter((key) => abilities.includes(STAT_ABILITY_NAMES[key]));
+  }, [pokemon.abilities]);
+  const evTotal = STAT_KEYS.reduce((sum, key) => sum + sim.evs[key], 0);
+
+  function updateIv(key: StatKey, raw: number) {
+    const value = Number.isFinite(raw)
+      ? Math.max(0, Math.min(31, Math.round(raw)))
+      : 0;
+    setSim((prev) => ({ ...prev, ivs: { ...prev.ivs, [key]: value } }));
+  }
+  function updateEv(key: StatKey, raw: number) {
+    const clamped = Number.isFinite(raw)
+      ? Math.max(0, Math.min(252, Math.round(raw)))
+      : 0;
+    const othersTotal = evTotal - sim.evs[key];
+    const value = Math.min(clamped, EV_TOTAL_CAP - othersTotal);
+    setSim((prev) => ({ ...prev, evs: { ...prev.evs, [key]: value } }));
+  }
+  function updateLevel(raw: number) {
+    const value = Number.isFinite(raw)
+      ? Math.max(1, Math.min(100, Math.round(raw)))
+      : 1;
+    setSim((prev) => ({ ...prev, level: value }));
+  }
 
   return (
     <div>
-      <h2 className="text-sm font-semibold text-foreground mb-3">
-        Base Stats{" "}
-        <span className="text-xs font-normal text-muted-foreground">(at level 100, max IVs, neutral nature)</span>
-      </h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-foreground">
+          Base Stats{" "}
+          <span className="text-xs font-normal text-muted-foreground">
+            {isDefaultSimulatorInputs(sim)
+              ? "(at level 100, max IVs, neutral nature)"
+              : `(level ${sim.level}, ${humanize(sim.nature)} nature)`}
+          </span>
+        </h2>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowCustomize((v) => !v)}
+        >
+          {showCustomize ? "Hide customization" : "Customize"}
+        </Button>
+      </div>
+
+      {showCustomize && (
+        <div className="mb-4 max-w-md space-y-3 rounded-lg border border-border p-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label
+                htmlFor="sim-level"
+                className="text-xs text-muted-foreground"
+              >
+                Level
+              </Label>
+              <Input
+                id="sim-level"
+                type="number"
+                min={1}
+                max={100}
+                value={sim.level}
+                onChange={(e) => updateLevel(e.target.valueAsNumber)}
+                className="h-8"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label
+                htmlFor="sim-nature"
+                className="text-xs text-muted-foreground"
+              >
+                Nature
+              </Label>
+              <Select
+                value={sim.nature}
+                onValueChange={(v) =>
+                  setSim((prev) => ({ ...prev, nature: v as Nature }))
+                }
+              >
+                <SelectTrigger id="sim-nature" size="sm" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {NATURES.map((n) => (
+                    <SelectItem key={n} value={n}>
+                      {humanize(n)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label
+                htmlFor="sim-item"
+                className="text-xs text-muted-foreground"
+              >
+                Held Item
+              </Label>
+              <Select
+                value={sim.item}
+                onValueChange={(v) =>
+                  setSim((prev) => ({ ...prev, item: v as StatModifierItem }))
+                }
+              >
+                <SelectTrigger id="sim-item" size="sm" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="choice_band">Choice Band</SelectItem>
+                  <SelectItem value="choice_specs">Choice Specs</SelectItem>
+                  <SelectItem value="choice_scarf">Choice Scarf</SelectItem>
+                  {!pokemon.is_final_evolution && (
+                    <SelectItem value="eviolite">Eviolite</SelectItem>
+                  )}
+                  <SelectItem value="assault_vest">Assault Vest</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {availableAbilities.length > 0 && (
+              <div className="space-y-1">
+                <Label
+                  htmlFor="sim-ability"
+                  className="text-xs text-muted-foreground"
+                >
+                  Ability
+                </Label>
+                <Select
+                  value={sim.ability}
+                  onValueChange={(v) =>
+                    setSim((prev) => ({
+                      ...prev,
+                      ability: v as StatModifierAbility,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="sim-ability" size="sm" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {availableAbilities.map((key) => (
+                      <SelectItem key={key} value={key}>
+                        {STAT_ABILITY_LABELS[key]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <div className="grid grid-cols-[3.5rem_1fr_1fr] gap-2 text-xs text-muted-foreground">
+              <span />
+              <span>IV (0-31)</span>
+              <span>EV (0-252)</span>
+            </div>
+            {STAT_KEYS.map((key) => (
+              <div
+                key={key}
+                className="grid grid-cols-[3.5rem_1fr_1fr] items-center gap-2"
+              >
+                <span className="text-xs text-muted-foreground">
+                  {STAT_LABELS[key]}
+                </span>
+                <Input
+                  type="number"
+                  min={0}
+                  max={31}
+                  value={sim.ivs[key]}
+                  onChange={(e) => updateIv(key, e.target.valueAsNumber)}
+                  className="h-7"
+                />
+                <Input
+                  type="number"
+                  min={0}
+                  max={252}
+                  value={sim.evs[key]}
+                  onChange={(e) => updateEv(key, e.target.valueAsNumber)}
+                  className="h-7"
+                />
+              </div>
+            ))}
+            <p className="text-xs text-muted-foreground pt-0.5">
+              EV total: {evTotal} / {EV_TOTAL_CAP}
+            </p>
+          </div>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSim(DEFAULT_SIMULATOR_INPUTS)}
+          >
+            Reset to default
+          </Button>
+        </div>
+      )}
+
       <div className="space-y-1.5 max-w-md">
-        {stats.map(([label, value]) => (
-          <div key={label} className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground w-16 shrink-0">{label}</span>
+        {STAT_KEYS.map((key) => (
+          <div key={key} className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground w-16 shrink-0">
+              {STAT_LABELS[key]}
+            </span>
             <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
               <div
                 className="h-full bg-primary rounded-full"
-                style={{ width: `${Math.min(100, (value / STAT_BAR_MAX) * 100)}%` }}
+                style={{
+                  width: `${Math.min(100, (computed[key] / STAT_BAR_MAX) * 100)}%`,
+                }}
               />
             </div>
-            <span className="text-xs text-foreground w-10 text-right tabular-nums">{value}</span>
+            <span className="text-xs text-foreground w-10 text-right tabular-nums">
+              {computed[key]}
+            </span>
           </div>
         ))}
         <div className="flex items-center gap-2 pt-1.5 mt-1 border-t border-border/50">
-          <span className="text-xs font-medium text-foreground w-16 shrink-0">Total</span>
+          <span className="text-xs font-medium text-foreground w-16 shrink-0">
+            Total
+          </span>
           <div className="flex-1" />
-          <span className="text-xs font-medium text-foreground w-10 text-right tabular-nums">{pokemon.stat_total}</span>
+          <span className="text-xs font-medium text-foreground w-10 text-right tabular-nums">
+            {computed.total}
+          </span>
         </div>
       </div>
     </div>
@@ -321,13 +797,19 @@ function StatsSection({ pokemon }: { pokemon: Pokemon }) {
 function MethodRow({ method }: { method: ShinyMethod }) {
   const boosts = parseJsonArray(method.boost_requirements);
   return (
-    <Card className={method.is_best_method ? "ring-2 ring-primary/40" : undefined}>
+    <Card
+      className={method.is_best_method ? "ring-2 ring-primary/40" : undefined}
+    >
       <CardContent className="flex items-center gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-foreground">{GAME_LABELS[method.game]}</span>
+            <span className="font-medium text-foreground">
+              {GAME_LABELS[method.game]}
+            </span>
             <span className="text-muted-foreground">·</span>
-            <span className="text-sm text-muted-foreground">{METHOD_LABELS[method.method]}</span>
+            <span className="text-sm text-muted-foreground">
+              {METHOD_LABELS[method.method]}
+            </span>
             {method.is_best_method && <Badge>Best</Badge>}
             {method.requires_transfer && (
               <Tooltip>
@@ -342,14 +824,21 @@ function MethodRow({ method }: { method: ShinyMethod }) {
             )}
           </div>
           {boosts.length > 0 && (
-            <p className="mt-1 text-xs text-muted-foreground">Boosts: {boosts.join(", ")}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Boosts: {boosts.join(", ")}
+            </p>
           )}
-          {method.notes && <p className="mt-1 text-xs text-muted-foreground">{method.notes}</p>}
+          {method.notes && (
+            <p className="mt-1 text-xs text-muted-foreground">{method.notes}</p>
+          )}
         </div>
         <div className="shrink-0 text-right">
-          <p className="text-sm font-semibold text-foreground">{formatOdds(method.odds_optimized)}</p>
+          <p className="text-sm font-semibold text-foreground">
+            {formatOdds(method.odds_optimized)}
+          </p>
           <p className="text-xs text-muted-foreground">
-            base {formatOdds(method.odds_base)} · charm {formatOdds(method.odds_charm)}
+            base {formatOdds(method.odds_base)} · charm{" "}
+            {formatOdds(method.odds_charm)}
           </p>
         </div>
         <a
@@ -365,7 +854,7 @@ function MethodRow({ method }: { method: ShinyMethod }) {
   );
 }
 
-function CollectionPanel({
+export function CollectionPanel({
   entry,
   methods,
   onStatusChange,
@@ -393,7 +882,10 @@ function CollectionPanel({
       <CardContent className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Status</span>
-          <Select value={entry.status} onValueChange={(v) => onStatusChange(v as CollectionStatus)}>
+          <Select
+            value={entry.status}
+            onValueChange={(v) => onStatusChange(v as CollectionStatus)}
+          >
             <SelectTrigger size="sm">
               <SelectValue />
             </SelectTrigger>
@@ -409,7 +901,9 @@ function CollectionPanel({
 
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Encounters</span>
-          <span className="text-sm font-semibold text-foreground">{entry.encounter_count}</span>
+          <span className="text-sm font-semibold text-foreground">
+            {entry.encounter_count}
+          </span>
           <Button size="sm" variant="outline" onClick={() => onCounter(1)}>
             +1
           </Button>
@@ -460,8 +954,13 @@ function CollectionPanel({
               </DialogHeader>
               <div className="space-y-3">
                 <div className="space-y-1.5">
-                  <span className="text-sm text-muted-foreground">Method used</span>
-                  <Select value={selectedMethodId} onValueChange={setSelectedMethodId}>
+                  <span className="text-sm text-muted-foreground">
+                    Method used
+                  </span>
+                  <Select
+                    value={selectedMethodId}
+                    onValueChange={setSelectedMethodId}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select a method…" />
                     </SelectTrigger>

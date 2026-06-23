@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { queryKeys } from "@/lib/queryKeys";
-import { clearTursoCredentials, forceSync, getSyncStatus, setTursoCredentials, type SyncMode } from "@/lib/tauri";
+import { clearTursoCredentials, forceSync, setTursoCredentials, type SyncMode } from "@/lib/tauri";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,
@@ -24,10 +25,7 @@ function Settings() {
   const [dbUrl, setDbUrl] = useState("");
   const [authToken, setAuthToken] = useState("");
 
-  const { data: syncStatus } = useQuery({
-    queryKey: queryKeys.syncStatus,
-    queryFn: () => getSyncStatus(),
-  });
+  const { isConfigured, status: syncStatus } = useSyncStatus();
 
   const invalidateSyncStatus = () => queryClient.invalidateQueries({ queryKey: queryKeys.syncStatus });
 
@@ -46,8 +44,6 @@ function Settings() {
     mutationFn: () => forceSync(),
     onSuccess: invalidateSyncStatus,
   });
-
-  const isConfigured = syncStatus?.mode === "embedded_replica";
 
   return (
     <div className="flex flex-col h-full w-full">

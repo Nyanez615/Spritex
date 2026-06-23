@@ -133,6 +133,14 @@ impl FromStr for Game {
     }
 }
 
+/// If you add a variant here that represents a *repeatable wild-encounter*
+/// chaining mechanic (in the spirit of Pokéradar/chain fishing/DexNav/SOS/
+/// Catch Combo/Mass Outbreak/Brilliant Pokémon), also add it to
+/// `tools/seed-gen/src/deriveShinyMethods.ts`'s `WILD_ONLY_METHODS` Set —
+/// nothing in Rust or TS enforces these two lists staying in sync, so a new
+/// wild-only method added here would otherwise silently apply to gift/
+/// static/trade-only species too (the exact bug class `WILD_ONLY_METHODS`
+/// exists to prevent).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
@@ -361,7 +369,7 @@ pub struct DexProgressBucket {
     pub total: i32,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
 pub enum SyncMode {
@@ -381,11 +389,45 @@ pub struct SyncStatus {
 mod tests {
     use super::*;
 
+    // as_str()/FromStr must stay in sync for every variant — a mismatch is a
+    // silent SQLite TEXT round-trip failure (write with as_str(), fail to
+    // parse back with from_str()), not a compile error. These three tests
+    // replace the previous partial (2-of-19 Method variants) coverage.
+
     #[test]
-    fn method_friend_safari_and_brilliant_pokemon_round_trip() {
-        assert_eq!(Method::FriendSafari.as_str(), "friend_safari");
-        assert_eq!(Method::from_str("friend_safari"), Ok(Method::FriendSafari));
-        assert_eq!(Method::BrilliantPokemon.as_str(), "brilliant_pokemon");
-        assert_eq!(Method::from_str("brilliant_pokemon"), Ok(Method::BrilliantPokemon));
+    fn game_all_variants_round_trip() {
+        let variants = [
+            Game::Gen1Vc, Game::Gen2Vc, Game::Gen3Rs, Game::Gen3E, Game::Gen3Frlg,
+            Game::Colosseum, Game::Xd, Game::Gen4Dp, Game::Gen4Pt, Game::Gen4Hgss,
+            Game::Ranger, Game::RangerSoa, Game::DreamWorld, Game::DreamRadar, Game::RangerGs,
+            Game::Gen5Bw, Game::Gen5B2W2, Game::Gen6Xy, Game::Gen6Oras, Game::Gen7Sm, Game::Gen7Usum,
+            Game::Lgpe, Game::Swsh, Game::Bdsp, Game::Pla, Game::Sv, Game::LegendsZa, Game::Go,
+        ];
+        assert_eq!(variants.len(), 28, "update this list whenever a Game variant is added or removed");
+        for variant in variants {
+            assert_eq!(Game::from_str(variant.as_str()), Ok(variant), "{variant:?} didn't round-trip");
+        }
+    }
+
+    #[test]
+    fn method_all_variants_round_trip() {
+        let variants = [
+            Method::Wild, Method::SoftReset, Method::Breeding, Method::Masuda, Method::ChainRadar,
+            Method::ChainFishing, Method::Sos, Method::Horde, Method::DexNav, Method::DexResearch,
+            Method::Outbreak, Method::DynamaxAdventure, Method::CatchCombo, Method::Wormhole, Method::Event,
+            Method::GoWild, Method::GoCommunityDay, Method::FriendSafari, Method::BrilliantPokemon,
+        ];
+        assert_eq!(variants.len(), 19, "update this list whenever a Method variant is added or removed");
+        for variant in variants {
+            assert_eq!(Method::from_str(variant.as_str()), Ok(variant), "{variant:?} didn't round-trip");
+        }
+    }
+
+    #[test]
+    fn collection_status_all_variants_round_trip() {
+        let variants = [CollectionStatus::NotStarted, CollectionStatus::Hunting, CollectionStatus::Caught];
+        for variant in variants {
+            assert_eq!(CollectionStatus::from_str(variant.as_str()), Ok(variant), "{variant:?} didn't round-trip");
+        }
     }
 }

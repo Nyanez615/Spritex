@@ -67,7 +67,7 @@ pub async fn open_synced(
     })
 }
 
-async fn run_synced_migrations(conn: &libsql::Connection) -> Result<(), libsql::Error> {
+pub(crate) async fn run_synced_migrations(conn: &libsql::Connection) -> Result<(), libsql::Error> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')))",
         (),

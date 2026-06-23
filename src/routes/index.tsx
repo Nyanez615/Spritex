@@ -24,6 +24,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FilterBar, type FilterGroup } from "@/components/FilterBar";
 import { useCollectionLookup } from "@/hooks/useCollectionLookup";
+import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { parseJsonArray } from "@/lib/format";
 import { COLOR_ORDER, TYPE_COLORS, TYPE_ORDER, humanize } from "@/lib/labels";
 import { cn } from "@/lib/utils";
@@ -45,8 +46,8 @@ const EXTRA_SORT_KEYS = [
   "stat_hp", "stat_attack", "stat_defense", "stat_special_attack", "stat_special_defense",
   "stat_speed", "stat_total",
 ] as const;
-type SortKey = "dex" | (typeof EXTRA_SORT_KEYS)[number];
-const SORT_KEYS: readonly SortKey[] = ["dex", ...EXTRA_SORT_KEYS];
+export type SortKey = "dex" | (typeof EXTRA_SORT_KEYS)[number];
+export const SORT_KEYS: readonly SortKey[] = ["dex", ...EXTRA_SORT_KEYS];
 
 const SORT_ACCESSORS: Record<Exclude<SortKey, "dex">, (p: Pokemon) => number | string> = {
   name: (p) => p.display_name,
@@ -80,9 +81,9 @@ const SORT_LABELS: Record<SortKey, string> = {
   stat_total: "Total Stats (Lv. 100)",
 };
 
-type SortDir = "asc" | "desc";
+export type SortDir = "asc" | "desc";
 /** dex/name/generation read naturally ascending; every numeric stat-like field reads naturally descending (best first). Independent of this, the direction toggle can always override it. */
-const DEFAULT_SORT_DIRECTION: Record<SortKey, SortDir> = {
+export const DEFAULT_SORT_DIRECTION: Record<SortKey, SortDir> = {
   dex: "asc",
   name: "asc",
   generation: "asc",
@@ -99,7 +100,7 @@ const DEFAULT_SORT_DIRECTION: Record<SortKey, SortDir> = {
   stat_total: "desc",
 };
 
-function genderBucket(rate: number): GenderBucket {
+export function genderBucket(rate: number): GenderBucket {
   if (rate === -1) return "genderless";
   if (rate === 0) return "male-only";
   if (rate === 8) return "female-only";
@@ -110,7 +111,7 @@ function genderBucket(rate: number): GenderBucket {
 // every filter's default — validateSearch below still fills in concrete
 // runtime defaults; the component recovers concrete types via destructuring
 // defaults at the point of use.
-type PokedexSearch = Partial<{
+export type PokedexSearch = Partial<{
   q: string;
   types: string[];
   colors: string[];
@@ -126,30 +127,32 @@ type PokedexSearch = Partial<{
   sortDir: SortDir;
 }>;
 
-const arrayOf = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+export const arrayOf = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
+
+export function validatePokedexSearch(search: Record<string, unknown>): PokedexSearch {
+  const sort: SortKey = (SORT_KEYS as readonly string[]).includes(search.sort as string)
+    ? (search.sort as SortKey)
+    : "dex";
+  return {
+    q: typeof search.q === "string" ? search.q : "",
+    types: arrayOf<string>(search.types),
+    colors: arrayOf<string>(search.colors),
+    gens: arrayOf<number>(search.gens).map(Number),
+    rarity: arrayOf<Rarity>(search.rarity),
+    gender: arrayOf<GenderBucket>(search.gender),
+    eggGroups: arrayOf<string>(search.eggGroups),
+    shapes: arrayOf<string>(search.shapes),
+    growthRates: arrayOf<string>(search.growthRates),
+    abilities: arrayOf<string>(search.abilities),
+    final: search.final === true,
+    sort,
+    sortDir: search.sortDir === "asc" || search.sortDir === "desc" ? search.sortDir : DEFAULT_SORT_DIRECTION[sort],
+  };
+}
 
 export const Route = createFileRoute("/")({
   component: PokedexGrid,
-  validateSearch: (search: Record<string, unknown>): PokedexSearch => {
-    const sort: SortKey = (SORT_KEYS as readonly string[]).includes(search.sort as string)
-      ? (search.sort as SortKey)
-      : "dex";
-    return {
-      q: typeof search.q === "string" ? search.q : "",
-      types: arrayOf<string>(search.types),
-      colors: arrayOf<string>(search.colors),
-      gens: arrayOf<number>(search.gens).map(Number),
-      rarity: arrayOf<Rarity>(search.rarity),
-      gender: arrayOf<GenderBucket>(search.gender),
-      eggGroups: arrayOf<string>(search.eggGroups),
-      shapes: arrayOf<string>(search.shapes),
-      growthRates: arrayOf<string>(search.growthRates),
-      abilities: arrayOf<string>(search.abilities),
-      final: search.final === true,
-      sort,
-      sortDir: search.sortDir === "asc" || search.sortDir === "desc" ? search.sortDir : DEFAULT_SORT_DIRECTION[sort],
-    };
-  },
+  validateSearch: validatePokedexSearch,
 });
 
 function PokedexGrid() {
@@ -388,7 +391,7 @@ function PokedexGrid() {
 }
 
 /** Reverses a humanized chip label (e.g. "Fire") back to its raw slug ("fire") for a known options list. */
-function rawFromHumanized<T extends string>(options: readonly T[], label: string): T {
+export function rawFromHumanized<T extends string>(options: readonly T[], label: string): T {
   return options.find((o) => humanize(o) === label)!;
 }
 
@@ -420,6 +423,7 @@ function PokedexFilterBar({
   const { q, types, colors, gens, rarity, gender, eggGroups, shapes, growthRates, abilities, final, sort, sortDir } =
     search;
   const [abilitiesOpen, setAbilitiesOpen] = useState(false);
+  const { isConfigured: isSyncConfigured, isLoading: syncLoading } = useSyncStatus();
 
   function setSort(newSort: SortKey) {
     updateSearch({ sort: newSort, sortDir: DEFAULT_SORT_DIRECTION[newSort] });
@@ -532,6 +536,11 @@ function PokedexFilterBar({
         }
         trailing={
           <div className="flex items-center gap-3">
+            {!syncLoading && !isSyncConfigured && (
+              <Link to="/settings" className="text-xs text-muted-foreground hover:text-foreground underline">
+                Set up sync to track your collection
+              </Link>
+            )}
             {hasActiveFilters && (
               <button onClick={clearAllFilters} className="text-xs text-muted-foreground hover:text-foreground underline">
                 Clear all

@@ -1,6 +1,6 @@
 use crate::db::AppState;
 use crate::models::{Pokemon, PokedexFilters};
-use rusqlite::Row;
+use rusqlite::{Connection, Row};
 use tauri::State;
 
 fn row_to_pokemon(row: &Row) -> rusqlite::Result<Pokemon> {
@@ -46,7 +46,13 @@ pub fn get_pokemon_list(
     filters: PokedexFilters,
 ) -> Result<Vec<Pokemon>, String> {
     let conn = state.static_db.lock().map_err(|e| e.to_string())?;
+    get_pokemon_list_impl(&conn, &filters)
+}
 
+/// Separated from the #[tauri::command] wrapper above purely so it's
+/// callable from tests without going through Tauri's State<T>, which has no
+/// public constructor outside the framework's own IPC dispatch.
+fn get_pokemon_list_impl(conn: &Connection, filters: &PokedexFilters) -> Result<Vec<Pokemon>, String> {
     // Fixed-shape query — always exactly 3 placeholders, always exactly 3
     // bound values. The previous version built the SQL string conditionally
     // (skipping a placeholder when a filter was absent) but always bound 2
@@ -85,6 +91,10 @@ pub fn get_pokemon_detail(
     form_id: i32,
 ) -> Result<Pokemon, String> {
     let conn = state.static_db.lock().map_err(|e| e.to_string())?;
+    get_pokemon_detail_impl(&conn, pokemon_id, form_id)
+}
+
+fn get_pokemon_detail_impl(conn: &Connection, pokemon_id: i32, form_id: i32) -> Result<Pokemon, String> {
     conn.query_row(
         "SELECT * FROM pokemon WHERE id = ?1 AND form_id = ?2",
         rusqlite::params![pokemon_id, form_id],
@@ -98,6 +108,10 @@ pub fn get_pokemon_detail(
 #[tauri::command]
 pub fn search_pokemon(state: State<'_, AppState>, query: String) -> Result<Vec<Pokemon>, String> {
     let conn = state.static_db.lock().map_err(|e| e.to_string())?;
+    search_pokemon_impl(&conn, &query)
+}
+
+fn search_pokemon_impl(conn: &Connection, query: &str) -> Result<Vec<Pokemon>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT * FROM pokemon \
@@ -111,4 +125,60 @@ pub fn search_pokemon(state: State<'_, AppState>, query: String) -> Result<Vec<P
 
     rows.collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::seed_static_db;
+
+    fn pokemon_row(id: i32, name: &str, generation: i32, legendary: bool) -> crate::test_support::TestPokemonRow {
+        crate::test_support::TestPokemonRow {
+            id,
+            name: name.to_string(),
+            generation,
+            is_legendary: legendary,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn get_pokemon_list_filters_by_search_generation_and_rarity_independently() {
+        let conn = seed_static_db(&[
+            pokemon_row(1, "bulbasaur", 1, false),
+            pokemon_row(150, "mewtwo", 1, true),
+            pokemon_row(25, "pikachu", 1, false),
+            pokemon_row(380, "latias", 3, true),
+        ]);
+
+        let all = get_pokemon_list_impl(&conn, &PokedexFilters { search: None, generation: None, legendary_or_mythical_only: None }).unwrap();
+        assert_eq!(all.len(), 4);
+
+        let by_search = get_pokemon_list_impl(&conn, &PokedexFilters { search: Some("pika".into()), generation: None, legendary_or_mythical_only: None }).unwrap();
+        assert_eq!(by_search.len(), 1);
+        assert_eq!(by_search[0].name, "pikachu");
+
+        let by_gen = get_pokemon_list_impl(&conn, &PokedexFilters { search: None, generation: Some(3), legendary_or_mythical_only: None }).unwrap();
+        assert_eq!(by_gen.len(), 1);
+        assert_eq!(by_gen[0].name, "latias");
+
+        let legendary_only = get_pokemon_list_impl(&conn, &PokedexFilters { search: None, generation: None, legendary_or_mythical_only: Some(true) }).unwrap();
+        assert_eq!(legendary_only.len(), 2);
+    }
+
+    #[test]
+    fn get_pokemon_detail_looks_up_by_id_and_form_id() {
+        let conn = seed_static_db(&[pokemon_row(1, "bulbasaur", 1, false)]);
+        let result = get_pokemon_detail_impl(&conn, 1, 0).unwrap();
+        assert_eq!(result.name, "bulbasaur");
+        assert!(get_pokemon_detail_impl(&conn, 999, 0).is_err());
+    }
+
+    #[test]
+    fn search_pokemon_matches_name_case_insensitively_and_caps_at_25() {
+        let rows: Vec<_> = (1..=30).map(|i| pokemon_row(i, &format!("species-{i}"), 1, false)).collect();
+        let conn = seed_static_db(&rows);
+        let results = search_pokemon_impl(&conn, "SPECIES").unwrap();
+        assert_eq!(results.len(), 25, "expected the LIMIT 25 cap to apply");
+    }
 }

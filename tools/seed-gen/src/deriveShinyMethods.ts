@@ -15,14 +15,25 @@
  * - "masuda" applies only if the game has breeding (NO_BREEDING_GAMES) and
  *   the species itself can lay eggs (isBreedable, from PokéAPI's egg
  *   groups — "no-eggs" excluded).
- * - chain_radar/chain_fishing/dex_nav/sos/catch_combo/brilliant_pokemon are
- *   game-level mechanics: any species wild-available in that game qualifies.
- * - "outbreak" (SV/PLA) likewise — Mass/Massive Mass Outbreaks pull from a
- *   wild encounter table, so outbreak eligibility tracks wild availability.
+ * - chain_radar/chain_fishing/dex_nav/sos/catch_combo/outbreak/
+ *   brilliant_pokemon (WILD_ONLY_METHODS, below) are game-level mechanics
+ *   that require a *repeatable wild encounter* to chain/grind against — they
+ *   qualify only for (form, game) pairs scrapeBulbapedia.ts's own area= text
+ *   marks as a genuine wild encounter (wildAvailableByForm). Gift/static/
+ *   trade/evolution/hatch-only availability does NOT count, even though the
+ *   baseline "wild" method above still applies to it (the shiny roll fires
+ *   identically regardless of how the Pokémon was obtained). Confirmed this
+ *   was a real, previously-unguarded bug: Bulbasaur's X/Y "Received from
+ *   Professor Sycamore" gift was incorrectly shown as Chain-Fishing-huntable
+ *   before wildAvailableByForm existed.
  * - "dynamax_adventure" (SwSh) and "friend_safari" (Gen6 X/Y) are gated by
  *   their own scraped rosters (scrapeDynamaxAdventure.ts/
  *   scrapeFriendSafari.ts) — both are restricted-roster mechanics, unlike
- *   the game-level ones above.
+ *   the game-level ones above. Roster membership itself is also NOT wild for
+ *   WILD_ONLY_METHODS purposes (a Dynamax Adventure den or Friend Safari
+ *   zone isn't a normal wild Route encounter you can Pokéradar-chain or
+ *   fish in) — see the availableByForm-population loops below, which
+ *   deliberately never add to wildAvailableByForm.
  * - Ranger/Ranger: Shadows of Almia/Ranger: Guardian Signs (Manaphy's egg)
  *   and Dream Radar (its full catchable roster) get availability only via
  *   rosterFacts.ts's small hardcoded species lists (resolveRosterKeys,
@@ -147,11 +158,21 @@ function resolveRosterKeys(byName: Map<string, FetchedSpecies>, names: string[])
   return keys;
 }
 
+/**
+ * Mechanics that require a *repeatable wild grass/water/cave encounter* to
+ * chain/grind against — gated on isWildAvailable, not just plain
+ * availability. See this file's header comment for the full rationale.
+ */
+const WILD_ONLY_METHODS: ReadonlySet<Method> = new Set([
+  "chain_radar", "chain_fishing", "dex_nav", "sos", "catch_combo", "outbreak", "brilliant_pokemon",
+]);
+
 function applicableMethods(
   game: Game,
   isBreedable: boolean,
   isInDaRoster: boolean,
   isInFriendSafariRoster: boolean,
+  isWildAvailable: boolean,
   oddsByGame: Map<Game, OddsRow[]>
 ): OddsRow[] {
   const rows = oddsByGame.get(game) ?? [];
@@ -160,7 +181,8 @@ function applicableMethods(
     if (row.method === "masuda") return !NO_BREEDING_GAMES.has(game) && isBreedable;
     if (row.method === "dynamax_adventure") return isInDaRoster;
     if (row.method === "friend_safari") return isInFriendSafariRoster;
-    return true; // wild, chain_radar, chain_fishing, dex_nav, sos, catch_combo, outbreak, brilliant_pokemon
+    if (WILD_ONLY_METHODS.has(row.method)) return isWildAvailable;
+    return true; // baseline "wild" method, and anything else genuinely ungated
   });
 }
 
@@ -178,18 +200,28 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
   const friendSafariRoster = new Set(friendSafariFacts.map((f) => f.pokemonId));
 
   const availableByForm = new Map<string, Set<Game>>();
+  // Subset of availableByForm: only (form, game) pairs Bulbapedia's own
+  // area= text marks as a genuine wild encounter — see WILD_ONLY_METHODS.
+  const wildAvailableByForm = new Map<string, Set<Game>>();
   for (const fact of availability) {
     if (fact.game === "go") continue; // GO deferred entirely — see scrapeBulbapedia.ts header
     const key = `${fact.pokemonId}:${fact.formId}`;
     if (!availableByForm.has(key)) availableByForm.set(key, new Set());
     availableByForm.get(key)!.add(fact.game);
+    if (fact.isWild) {
+      if (!wildAvailableByForm.has(key)) wildAvailableByForm.set(key, new Set());
+      wildAvailableByForm.get(key)!.add(fact.game);
+    }
   }
   // DA-roster/Friend-Safari-roster membership is itself a form of in-game
   // availability — some DA prizes (Solgaleo, Lunala, Necrozma, ...) aren't
   // natively wild/gift-available in SwSh at all per Bulbapedia's
   // Game-locations table, only catchable via the Crown Tundra den, so
   // "swsh"/"gen6_xy" must be added here rather than relying on them already
-  // being present from the loop above.
+  // being present from the loop above. Deliberately never added to
+  // wildAvailableByForm — a den/Safari-zone catch isn't a normal wild Route
+  // encounter you can Pokéradar-chain or fish in (absence there already
+  // means non-wild for WILD_ONLY_METHODS, no explicit marker needed).
   for (const fact of daRosterFacts) {
     const key = `${fact.pokemonId}:${fact.formId}`;
     if (!availableByForm.has(key)) availableByForm.set(key, new Set());
@@ -275,11 +307,13 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
       // without this check a future regional form sharing that pokemonId
       // would silently inherit eligibility it was never recorded against.
       const isInFriendSafariRoster = variety.formId === 0 && friendSafariRoster.has(s.pokemonId);
+      const wildAvailableGames = wildAvailableByForm.get(key) ?? new Set<Game>();
 
       const candidateRows: Array<{ game: Game; method: Method; odds: OddsRow }> = [];
       for (const game of available) {
         if (locked.has(game)) continue;
-        for (const odds of applicableMethods(game, s.isBreedable, isInDaRoster, isInFriendSafariRoster, oddsByGame)) {
+        const isWildAvailable = wildAvailableGames.has(game);
+        for (const odds of applicableMethods(game, s.isBreedable, isInDaRoster, isInFriendSafariRoster, isWildAvailable, oddsByGame)) {
           candidateRows.push({ game, method: odds.method, odds });
         }
       }

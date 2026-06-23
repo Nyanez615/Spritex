@@ -55,6 +55,21 @@
  * encounters) can be. So an entry only counts as real availability if it
  * matches the genuinely-Shiny-rollable category for that specific game —
  * see the `isShadowPokemon` check in parseAvailability below.
+ *
+ * One more per-entry signal: whether the entry represents a genuine *wild*
+ * encounter, as opposed to a one-time NPC gift, a static "(Only one)"
+ * encounter, a trade, an evolution-only path, or a hatch-only path. This
+ * matters because several Method rows (chain_radar/Pokéradar, chain_fishing,
+ * dex_nav, sos, catch_combo, outbreak, brilliant_pokemon — see
+ * deriveShinyMethods.ts's WILD_ONLY_METHODS) require a *repeatable* wild
+ * encounter to chain/grind against; the baseline Method::Wild row still
+ * applies regardless (the shiny roll itself fires identically no matter how
+ * the Pokémon was obtained). Verified directly against live wikitext rather
+ * than assumed: Bulbasaur's X/Y entry reads "Received from Professor
+ * Sycamore" with an `area=` link to Bulbapedia's "List of in-game event
+ * Pokémon" catalog — not a Route/fishing encounter — yet was incorrectly
+ * shown as Chain-Fishing-huntable before this check existed. See
+ * `isWildSegment` below for the exact signal.
  */
 import type { FetchedSpecies, FetchedVariety } from "./fetchPokeapi.js";
 import { BULBAPEDIA_LABEL_TO_GAMES, type Game } from "./gameMap.js";
@@ -66,6 +81,8 @@ export interface AvailabilityFact {
   pokemonId: number;
   formId: number;
   game: Game;
+  /** True unless the area= text signals a gift/static/trade/evolution/hatch-only path — see isWildSegment. */
+  isWild: boolean;
 }
 
 export interface AvailabilityOutput {
@@ -85,11 +102,16 @@ export interface AvailabilityOutput {
  * which candidate's displayName (e.g. "Paldean Tauros (Combat Breed)")
  * mentions a breed word also present in the annotation's parenthetical.
  */
-function resolveAnnotation(boldText: string, varieties: FetchedVariety[]): number[] {
+function resolveAnnotation(
+  boldText: string,
+  varieties: FetchedVariety[],
+): number[] {
   const adjective = boldText.match(/^([A-Za-z]+) Form/)?.[1];
   if (!adjective) return [0]; // not a region-form annotation at all — treat as the base form
 
-  const candidates = varieties.filter((v) => v.formName?.toLowerCase() === adjective.toLowerCase());
+  const candidates = varieties.filter(
+    (v) => v.formName?.toLowerCase() === adjective.toLowerCase(),
+  );
   if (candidates.length === 0) return [0]; // e.g. "Kantonian"/"Johtonian" — origin label for the untracked base form
   if (candidates.length === 1) return [candidates[0].formId];
 
@@ -100,18 +122,103 @@ function resolveAnnotation(boldText: string, varieties: FetchedVariety[]): numbe
   // Can't disambiguate which of the shared-adjective varieties this refers
   // to (e.g. a generic "Paldean Form" with no breed parenthetical) — apply
   // to all of them rather than guessing one.
-  return breedMatches.length > 0 ? breedMatches.map((v) => v.formId) : candidates.map((v) => v.formId);
+  return breedMatches.length > 0
+    ? breedMatches.map((v) => v.formId)
+    : candidates.map((v) => v.formId);
 }
 
-function resolveFormIds(areaText: string, varieties: FetchedVariety[]): number[] {
-  if (varieties.length <= 1) return [varieties[0]?.formId ?? 0];
+/**
+ * An area= segment signals non-wild availability when it links to
+ * Bulbapedia's event-Pokémon catalog (covers both one-time NPC gifts AND
+ * "(Only one)" static encounters — both use the same catalog link per
+ * Bulbapedia convention), is a starter-gift ("[[First partner Pokémon]]" —
+ * confirmed the stable wikilink for every generation's starter trio, e.g.
+ * Turtwig's DP/Pt entry: "[[First partner Pokémon]] from [[Professor
+ * Rowan]]'s briefcase at [[Lake Verity]]" has no event-catalog link, so it
+ * needs its own marker rather than relying on that one), an explicit trade
+ * (wikilinked, or plain "Traded from" — confirmed: Chespin's X/Y entry reads
+ * "Traded from [[Shauna]] in [[Vaniville Town]]..." with no [[Trade]] link),
+ * an evolution-only path, or a hatch-only path. Chain mechanics (Pokéradar,
+ * chain fishing, DexNav, SOS, catch combo, Mass Outbreak, Brilliant Pokémon)
+ * require a *repeatable wild grass/water/cave encounter* to grind against —
+ * none of these categories qualify, even though the baseline Method::Wild
+ * row still applies to all of them. Verified against multiple real pages
+ * (Bulbasaur, every generation's starter trio, a known-wild X/Y species, a
+ * known static encounter, a known trade-only species, an evolution-only
+ * species) — absence of all of these markers, with a real location/route
+ * link present, defaults to wild.
+ *
+ * The `t=`/`t2=`/`color=` template params were checked directly against
+ * Bulbapedia (including the template's own documentation page) and are NOT
+ * a reliable signal — display/formatting only, intentionally not consulted
+ * here.
+ *
+ * Honest gap: this is a best-effort textual heuristic verified against
+ * several real examples, not an exhaustive parse of every phrasing
+ * Bulbapedia uses across ~1080 species. A repeatable static encounter
+ * phrased without a link to the event-Pokémon catalog would be
+ * misclassified as wild (rare — most static encounters Bulbapedia tracks do
+ * use that link); a mainline game's own area text mentioning "Friend
+ * Safari" as an alternate location isn't specifically checked for either
+ * (distinct from the separate Friend-Safari-roster mechanism in
+ * deriveShinyMethods.ts, which is already handled). Don't add markers for
+ * cases not yet confirmed against a real page.
+ */
+const NON_WILD_MARKERS = [
+  /\[\[List of in-game event Pokémon/i, // covers both "Received" gifts and "(Only one)" statics
+  /\[\[First partner Pokémon\]\]/i, // starter-gift link, used identically across every generation
+  /\[\[Trade|Traded from/i, // explicit trade link, or plain-text "Traded from" (confirmed: Chespin X/Y)
+  /\[\[Evolution\|Evolve/i, // evolution-only path
+  /Evolve\s*\{\{p\|/i, // alt evolution-link wikitext form
+  /Hatch\s*\{\{pkmn\|Egg\}\}/i, // breeding/hatch-only — non-wild for chain-mechanic purposes
+];
+
+function isWildSegment(segmentText: string): boolean {
+  return !NON_WILD_MARKERS.some((re) => re.test(segmentText));
+}
+
+/**
+ * Wildness is about textual structure (multiple <br>-separated sources
+ * listed in one area= cell), independent of whether the species has
+ * multiple Pokédex forms — so this always splits on <br> and OR-merges,
+ * even for single-form species. Verified necessary against a real example:
+ * Bulbasaur's Legends: Z-A entry combines a non-wild gift segment ("Vert
+ * District: ... Received from Mable during Side Mission 22") with a
+ * genuinely wild segment ("Centrico Plaza: Wild Zone 20") in one cell,
+ * despite Bulbasaur having only one tracked form — treating the whole cell
+ * as a single non-split segment would have misclassified it as fully
+ * non-wild and incorrectly suppressed its legitimate wild availability.
+ */
+function isWildArea(areaText: string): boolean {
+  const segments = areaText
+    .split(/<br\s*\/?>/i)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (segments.length === 0) return isWildSegment(areaText); // defensive fallback, shouldn't occur in practice
+  return segments.some(isWildSegment);
+}
+
+function resolveFormIdsAndWildness(
+  areaText: string,
+  varieties: FetchedVariety[],
+): { formIds: number[]; wildByFormId: Map<number, boolean> } {
+  if (varieties.length <= 1) {
+    const formId = varieties[0]?.formId ?? 0;
+    return {
+      formIds: [formId],
+      wildByFormId: new Map([[formId, isWildArea(areaText)]]),
+    };
+  }
 
   const segments = areaText.split(/<br\s*\/?>/i);
   const annotatedFormIds: number[] = [];
+  const wildByFormId = new Map<number, boolean>();
   let sawAnnotation = false;
   let sawUnannotatedContent = false;
+  let unannotatedWild = false;
 
   for (const segment of segments) {
+    const segmentWild = isWildSegment(segment);
     // matchAll, not match: a segment can carry more than one bold form
     // annotation without a <br> between them (no real example yet, but
     // nothing in the wikitext convention rules it out) — match() alone
@@ -119,29 +226,60 @@ function resolveFormIds(areaText: string, varieties: FetchedVariety[]): number[]
     const matches = [...segment.matchAll(/'''([^']+)'''/g)];
     if (matches.length > 0) {
       sawAnnotation = true;
-      for (const match of matches) annotatedFormIds.push(...resolveAnnotation(match[1], varieties));
+      for (const match of matches) {
+        for (const formId of resolveAnnotation(match[1], varieties)) {
+          annotatedFormIds.push(formId);
+          // OR-combine: a formId is wild if any segment naming it is wild —
+          // same merge philosophy already used for form membership itself.
+          wildByFormId.set(
+            formId,
+            (wildByFormId.get(formId) ?? false) || segmentWild,
+          );
+        }
+      }
     } else if (segment.trim().length > 0) {
       sawUnannotatedContent = true;
+      // OR, not AND: wild if any unannotated segment is wild, same merge
+      // philosophy as everywhere else here.
+      unannotatedWild = unannotatedWild || segmentWild;
     }
   }
 
-  if (!sawAnnotation) return varieties.map((v) => v.formId);
-  if (sawUnannotatedContent) annotatedFormIds.push(0);
-  return [...new Set(annotatedFormIds)];
+  if (!sawAnnotation) {
+    const wild = isWildArea(areaText);
+    return {
+      formIds: varieties.map((v) => v.formId),
+      wildByFormId: new Map(varieties.map((v) => [v.formId, wild])),
+    };
+  }
+  if (sawUnannotatedContent) {
+    annotatedFormIds.push(0);
+    wildByFormId.set(0, (wildByFormId.get(0) ?? false) || unannotatedWild);
+  }
+  const formIds = [...new Set(annotatedFormIds)];
+  return { formIds, wildByFormId };
 }
 
-export function parseAvailability(wikitext: string, varieties: FetchedVariety[]): Array<{ game: Game; formId: number }> {
+export function parseAvailability(
+  wikitext: string,
+  varieties: FetchedVariety[],
+): Array<{ game: Game; formId: number; isWild: boolean }> {
   const mainSection = wikitext.split("{{Availability/Footer}}")[0];
   const calls = findTemplateCalls(mainSection, "Availability/Entry");
-  const results: Array<{ game: Game; formId: number }> = [];
+  const results: Array<{ game: Game; formId: number; isWild: boolean }> = [];
 
   for (const call of calls) {
     const { name, params } = parseTemplateCall(call);
     if (name.endsWith("/None")) continue; // not obtainable in this version, by any means
 
     const isShadowPokemon = /shadow color/i.test(params.area ?? "");
-    const versionLabels = [params.v, params.v2].filter((v): v is string => Boolean(v));
-    const formIds = resolveFormIds(params.area ?? "", varieties);
+    const versionLabels = [params.v, params.v2].filter((v): v is string =>
+      Boolean(v),
+    );
+    const { formIds, wildByFormId } = resolveFormIdsAndWildness(
+      params.area ?? "",
+      varieties,
+    );
 
     for (const label of versionLabels) {
       const games = BULBAPEDIA_LABEL_TO_GAMES[label];
@@ -152,7 +290,13 @@ export function parseAvailability(wikitext: string, varieties: FetchedVariety[])
         // counts as availability for each.
         if (game === "colosseum" && !isShadowPokemon) continue;
         if (game === "xd" && isShadowPokemon) continue;
-        for (const formId of formIds) results.push({ game, formId });
+        for (const formId of formIds) {
+          results.push({
+            game,
+            formId,
+            isWild: wildByFormId.get(formId) ?? true,
+          });
+        }
       }
     }
   }
@@ -160,20 +304,35 @@ export function parseAvailability(wikitext: string, varieties: FetchedVariety[])
   return results;
 }
 
-async function scrapeOneSpecies(species: FetchedSpecies): Promise<{ facts: AvailabilityFact[]; citation?: string }> {
-  const section = await fetchNamedSection(`${species.displayName} (Pokémon)`, "Game locations");
+async function scrapeOneSpecies(
+  species: FetchedSpecies,
+): Promise<{ facts: AvailabilityFact[]; citation?: string }> {
+  const section = await fetchNamedSection(
+    `${species.displayName} (Pokémon)`,
+    "Game locations",
+  );
   if (!section) return { facts: [] };
 
   const hits = parseAvailability(section.wikitext, species.varieties);
-  const seen = new Set<string>();
-  const facts: AvailabilityFact[] = [];
+  const byKey = new Map<string, AvailabilityFact>();
   for (const hit of hits) {
     const key = `${hit.formId}:${hit.game}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    facts.push({ pokemonId: species.pokemonId, formId: hit.formId, game: hit.game });
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.isWild = existing.isWild || hit.isWild;
+      continue;
+    }
+    byKey.set(key, {
+      pokemonId: species.pokemonId,
+      formId: hit.formId,
+      game: hit.game,
+      isWild: hit.isWild,
+    });
   }
-  return { facts, citation: pageUrl(section.canonicalTitle) };
+  return {
+    facts: [...byKey.values()],
+    citation: pageUrl(section.canonicalTitle),
+  };
 }
 
 export async function runScrapeBulbapedia(): Promise<AvailabilityOutput> {
@@ -191,12 +350,18 @@ export async function runScrapeBulbapedia(): Promise<AvailabilityOutput> {
       else missingPages++;
       availability.push(...facts);
       done++;
-      if (done % 100 === 0) console.log(`  scraped ${done}/${species.length} species`);
-    })
+      if (done % 100 === 0)
+        console.log(`  scraped ${done}/${species.length} species`);
+    }),
   );
 
-  console.log(`scrapeBulbapedia: ${species.length - missingPages}/${species.length} pages resolved, ${availability.length} availability facts`);
-  if (missingPages > 0) console.log(`  ${missingPages} species had no resolvable "${"Game locations"}" page/section — left with no availability (source pending)`);
+  console.log(
+    `scrapeBulbapedia: ${species.length - missingPages}/${species.length} pages resolved, ${availability.length} availability facts`,
+  );
+  if (missingPages > 0)
+    console.log(
+      `  ${missingPages} species had no resolvable "${"Game locations"}" page/section — left with no availability (source pending)`,
+    );
 
   const output: AvailabilityOutput = { citations, availability };
   await writeOutJson("availability.json", output);

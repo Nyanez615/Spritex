@@ -15,6 +15,10 @@ fn keyring_entry(key: &str) -> Result<keyring::Entry, String> {
 
 #[tauri::command]
 pub async fn get_sync_status(state: State<'_, AppState>) -> Result<SyncStatus, String> {
+    get_sync_status_impl(&state)
+}
+
+fn get_sync_status_impl(state: &AppState) -> Result<SyncStatus, String> {
     let configured = state.sync_db.lock().map_err(|e| e.to_string())?.is_some();
     Ok(SyncStatus {
         last_synced_at: None,
@@ -101,5 +105,46 @@ pub async fn try_restore_sync(app: &AppHandle, state: &AppState) {
             }
         }
         Err(e) => eprintln!("failed to restore Turso sync on launch: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::SyncedDb;
+    use crate::test_support::{bare_static_db, local_synced_db};
+    use std::sync::{Arc, Mutex};
+
+    // set_turso_credentials/clear_turso_credentials/try_restore_sync are
+    // deliberately not unit-tested here — they write to the real OS
+    // keychain (via the `keyring` crate) and/or require a real Tauri
+    // AppHandle for db::open_synced, neither of which is safe or possible
+    // to fabricate in a unit test without mutating actual system state.
+    // get_sync_status/force_sync's *logic* (excluding force_sync's network
+    // .sync() call, which needs a real remote replica to mean anything) is
+    // what's covered below.
+
+    fn app_state(sync_db: Option<SyncedDb>) -> AppState {
+        AppState {
+            static_db: Arc::new(Mutex::new(bare_static_db())),
+            sync_db: Arc::new(Mutex::new(sync_db)),
+        }
+    }
+
+    #[test]
+    fn get_sync_status_reports_unconfigured_when_sync_db_is_none() {
+        let state = app_state(None);
+        let status = get_sync_status_impl(&state).unwrap();
+        assert_eq!(status.mode, SyncMode::Unconfigured);
+        assert!(!status.is_online);
+    }
+
+    #[tokio::test]
+    async fn get_sync_status_reports_embedded_replica_when_configured() {
+        let (db, conn) = local_synced_db().await;
+        let state = app_state(Some(SyncedDb { db, conn }));
+        let status = get_sync_status_impl(&state).unwrap();
+        assert_eq!(status.mode, SyncMode::EmbeddedReplica);
+        assert!(status.is_online);
     }
 }

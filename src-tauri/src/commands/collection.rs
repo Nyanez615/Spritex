@@ -4,6 +4,7 @@ use crate::models::{
 };
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
@@ -82,7 +83,12 @@ pub(crate) async fn fetch_entry(
     }
 }
 
-pub(crate) async fn require_sync_db(state: &State<'_, AppState>) -> Result<libsql::Connection, String> {
+/// Takes `&AppState`, not `&State<'_, AppState>` — `State` has no public
+/// constructor outside Tauri's own IPC dispatch, so this signature is what
+/// makes the function callable from tests at all. Every call site below
+/// still just writes `&state`; `State: Deref<Target = AppState>` means Rust
+/// coerces it automatically, no call-site change needed.
+pub(crate) async fn require_sync_db(state: &AppState) -> Result<libsql::Connection, String> {
     state
         .sync_db
         .lock()
@@ -94,9 +100,7 @@ pub(crate) async fn require_sync_db(state: &State<'_, AppState>) -> Result<libsq
 
 /// Like `require_sync_db`, but returns the `Database` handle `.sync()` lives
 /// on, for `force_sync` specifically.
-pub(crate) fn require_sync_database(
-    state: &State<'_, AppState>,
-) -> Result<std::sync::Arc<libsql::Database>, String> {
+pub(crate) fn require_sync_database(state: &AppState) -> Result<Arc<libsql::Database>, String> {
     state
         .sync_db
         .lock()
@@ -124,6 +128,15 @@ pub async fn update_status(
     status: CollectionStatus,
 ) -> Result<CollectionEntry, String> {
     let conn = require_sync_db(&state).await?;
+    update_status_impl(&conn, pokemon_id, form_id, status).await
+}
+
+async fn update_status_impl(
+    conn: &libsql::Connection,
+    pokemon_id: i32,
+    form_id: i32,
+    status: CollectionStatus,
+) -> Result<CollectionEntry, String> {
     let id = Uuid::new_v4().to_string();
 
     conn.execute(
@@ -136,7 +149,7 @@ pub async fn update_status(
     .await
     .map_err(|e| e.to_string())?;
 
-    fetch_entry(&conn, pokemon_id, form_id).await
+    fetch_entry(conn, pokemon_id, form_id).await
 }
 
 #[tauri::command]
@@ -149,6 +162,17 @@ pub async fn mark_caught(
     method_used: Method,
 ) -> Result<CollectionEntry, String> {
     let conn = require_sync_db(&state).await?;
+    mark_caught_impl(&conn, pokemon_id, form_id, is_shiny, game_caught, method_used).await
+}
+
+pub(crate) async fn mark_caught_impl(
+    conn: &libsql::Connection,
+    pokemon_id: i32,
+    form_id: i32,
+    is_shiny: bool,
+    game_caught: Game,
+    method_used: Method,
+) -> Result<CollectionEntry, String> {
     let id = Uuid::new_v4().to_string();
 
     conn.execute(
@@ -172,7 +196,7 @@ pub async fn mark_caught(
     .await
     .map_err(|e| e.to_string())?;
 
-    fetch_entry(&conn, pokemon_id, form_id).await
+    fetch_entry(conn, pokemon_id, form_id).await
 }
 
 /// Resets active-hunt progress (encounter counter, checklist) and reverts
@@ -185,7 +209,10 @@ pub async fn reset_hunt(
     form_id: i32,
 ) -> Result<CollectionEntry, String> {
     let conn = require_sync_db(&state).await?;
+    reset_hunt_impl(&conn, pokemon_id, form_id).await
+}
 
+async fn reset_hunt_impl(conn: &libsql::Connection, pokemon_id: i32, form_id: i32) -> Result<CollectionEntry, String> {
     conn.execute(
         "UPDATE collection SET status = 'not_started', encounter_count = 0, \
          has_shiny_charm = 0, sandwich_active = 0, outbreak_active = 0, chain_count = 0, \
@@ -196,7 +223,7 @@ pub async fn reset_hunt(
     .await
     .map_err(|e| e.to_string())?;
 
-    fetch_entry(&conn, pokemon_id, form_id).await
+    fetch_entry(conn, pokemon_id, form_id).await
 }
 
 /// Living Dex progress: shiny-caught count vs. total species, grouped by
@@ -208,30 +235,44 @@ pub async fn get_living_dex_stats(
     state: State<'_, AppState>,
     group_by: DexGroupBy,
 ) -> Result<Vec<DexProgressBucket>, String> {
-    let static_groups: Vec<(i32, i32, String)> = {
+    let static_groups = {
         let conn = state.static_db.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare("SELECT id, form_id, generation, types FROM pokemon")
-            .map_err(|e| e.to_string())?;
-        let mapped = stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, i32>(0)?,
-                    row.get::<_, i32>(1)?,
-                    if matches!(group_by, DexGroupBy::Generation) {
-                        row.get::<_, i32>(2)?.to_string()
-                    } else {
-                        row.get::<_, String>(3)?
-                    },
-                ))
-            })
-            .map_err(|e| e.to_string())?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(|e| e.to_string())?;
-        mapped
+        read_static_groups(&conn, group_by)?
     };
-
     let sync_conn = require_sync_db(&state).await?;
+    get_living_dex_stats_impl(static_groups, &sync_conn, group_by).await
+}
+
+fn read_static_groups(
+    conn: &rusqlite::Connection,
+    group_by: DexGroupBy,
+) -> Result<Vec<(i32, i32, String)>, String> {
+    let mut stmt = conn
+        .prepare("SELECT id, form_id, generation, types FROM pokemon")
+        .map_err(|e| e.to_string())?;
+    let mapped = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i32>(0)?,
+                row.get::<_, i32>(1)?,
+                if matches!(group_by, DexGroupBy::Generation) {
+                    row.get::<_, i32>(2)?.to_string()
+                } else {
+                    row.get::<_, String>(3)?
+                },
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+    Ok(mapped)
+}
+
+async fn get_living_dex_stats_impl(
+    static_groups: Vec<(i32, i32, String)>,
+    sync_conn: &libsql::Connection,
+    group_by: DexGroupBy,
+) -> Result<Vec<DexProgressBucket>, String> {
     let mut shiny_rows = sync_conn
         .query(
             "SELECT pokemon_id, form_id FROM collection \
@@ -279,6 +320,10 @@ pub async fn get_living_dex_stats(
 #[tauri::command]
 pub async fn get_all_collection_entries(state: State<'_, AppState>) -> Result<Vec<CollectionEntry>, String> {
     let conn = require_sync_db(&state).await?;
+    get_all_collection_entries_impl(&conn).await
+}
+
+async fn get_all_collection_entries_impl(conn: &libsql::Connection) -> Result<Vec<CollectionEntry>, String> {
     let mut rows = conn
         .query(
             &format!("SELECT {COLLECTION_COLUMNS} FROM collection WHERE deleted_at IS NULL"),
@@ -292,4 +337,115 @@ pub async fn get_all_collection_entries(state: State<'_, AppState>) -> Result<Ve
         entries.push(row_to_collection_entry(&row)?);
     }
     Ok(entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::SyncedDb;
+    use crate::test_support::{bare_static_db, local_synced_db};
+    use std::sync::Mutex;
+
+    fn app_state(sync_db: Option<SyncedDb>) -> AppState {
+        AppState {
+            static_db: Arc::new(Mutex::new(bare_static_db())),
+            sync_db: Arc::new(Mutex::new(sync_db)),
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_entry_returns_a_default_not_started_row_when_none_exists() {
+        let (_db, conn) = local_synced_db().await;
+        let entry = fetch_entry(&conn, 1, 0).await.unwrap();
+        assert_eq!(entry.status, CollectionStatus::NotStarted);
+        assert_eq!(entry.pokemon_id, 1);
+        assert_eq!(entry.form_id, 0);
+        assert_eq!(entry.encounter_count, 0);
+    }
+
+    #[tokio::test]
+    async fn update_status_upserts_not_duplicates() {
+        let (_db, conn) = local_synced_db().await;
+        update_status_impl(&conn, 1, 0, CollectionStatus::Hunting).await.unwrap();
+        let entry = update_status_impl(&conn, 1, 0, CollectionStatus::Caught).await.unwrap();
+        assert_eq!(entry.status, CollectionStatus::Caught);
+
+        let mut rows = conn.query("SELECT COUNT(*) FROM collection WHERE pokemon_id = 1 AND form_id = 0", ()).await.unwrap();
+        let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        assert_eq!(count, 1, "expected one row, not a duplicate insert");
+    }
+
+    #[tokio::test]
+    async fn mark_caught_records_shiny_game_and_method() {
+        let (_db, conn) = local_synced_db().await;
+        let entry = mark_caught_impl(&conn, 1, 0, true, Game::Sv, Method::Outbreak).await.unwrap();
+        assert_eq!(entry.status, CollectionStatus::Caught);
+        assert!(entry.is_shiny);
+        assert_eq!(entry.game_caught, Some(Game::Sv));
+        assert_eq!(entry.method_used, Some(Method::Outbreak));
+    }
+
+    #[tokio::test]
+    async fn reset_hunt_clears_progress_without_touching_caught_history() {
+        let (_db, conn) = local_synced_db().await;
+        mark_caught_impl(&conn, 1, 0, true, Game::Sv, Method::Outbreak).await.unwrap();
+
+        let entry = reset_hunt_impl(&conn, 1, 0).await.unwrap();
+        assert_eq!(entry.status, CollectionStatus::NotStarted);
+        assert_eq!(entry.encounter_count, 0);
+        // reset_hunt doesn't touch caught_at/game_caught/method_used/is_shiny —
+        // confirmed those remain from the prior mark_caught, not cleared.
+        assert!(entry.is_shiny);
+        assert_eq!(entry.game_caught, Some(Game::Sv));
+    }
+
+    #[tokio::test]
+    async fn get_all_collection_entries_impl_returns_every_non_deleted_row() {
+        let (_db, conn) = local_synced_db().await;
+        update_status_impl(&conn, 1, 0, CollectionStatus::Hunting).await.unwrap();
+        update_status_impl(&conn, 2, 0, CollectionStatus::Caught).await.unwrap();
+
+        let entries = get_all_collection_entries_impl(&conn).await.unwrap();
+        assert_eq!(entries.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn get_living_dex_stats_impl_counts_shiny_caught_against_total_by_generation() {
+        let (_db, conn) = local_synced_db().await;
+        mark_caught_impl(&conn, 1, 0, true, Game::Sv, Method::Outbreak).await.unwrap();
+
+        // 2 species in gen 1 (one caught shiny), 1 in gen 3 (none caught).
+        let static_groups = vec![
+            (1, 0, "1".to_string()),
+            (2, 0, "1".to_string()),
+            (3, 0, "3".to_string()),
+        ];
+        let buckets = get_living_dex_stats_impl(static_groups, &conn, DexGroupBy::Generation).await.unwrap();
+
+        let gen1 = buckets.iter().find(|b| b.label == "1").unwrap();
+        assert_eq!((gen1.caught, gen1.total), (1, 2));
+        let gen3 = buckets.iter().find(|b| b.label == "3").unwrap();
+        assert_eq!((gen3.caught, gen3.total), (0, 1));
+    }
+
+    #[tokio::test]
+    async fn require_sync_db_errors_clearly_when_sync_is_not_configured() {
+        let state = app_state(None);
+        let err = require_sync_db(&state).await.unwrap_err();
+        assert!(err.contains("Sync not configured"));
+    }
+
+    #[tokio::test]
+    async fn require_sync_db_returns_the_connection_when_configured() {
+        let (db, conn) = local_synced_db().await;
+        let state = app_state(Some(SyncedDb { db, conn }));
+        assert!(require_sync_db(&state).await.is_ok());
+    }
+
+    #[test]
+    fn require_sync_database_errors_clearly_when_sync_is_not_configured() {
+        let state = app_state(None);
+        let err = require_sync_database(&state).unwrap_err();
+        assert!(err.contains("Sync not configured"));
+    }
 }
