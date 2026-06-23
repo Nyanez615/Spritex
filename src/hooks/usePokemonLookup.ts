@@ -10,6 +10,10 @@ const NO_FILTERS = { search: null, generation: null, legendary_or_mythical_only:
  * that needs to render a name/sprite alongside one of those rows (table,
  * games browse, hunt dashboard, quick counter) joins against this lookup
  * in JS rather than duplicating the fetch-and-Map-build per view.
+ *
+ * Also exposes the same list as `ordered` (the Rust query's own `(id,
+ * form_id)` order, a Map loses that) — the detail page's next/prev
+ * navigation reuses it rather than fetching/sorting the list separately.
  */
 export function usePokemonLookup() {
   const { data: pokemonList } = useQuery({
@@ -18,10 +22,10 @@ export function usePokemonLookup() {
   });
 
   return useMemo(() => {
-    const map = new Map<string, Pokemon>();
+    const byKey = new Map<string, Pokemon>();
     for (const p of pokemonList ?? []) {
-      map.set(`${p.id}-${p.form_id}`, p);
+      byKey.set(`${p.id}-${p.form_id}`, p);
     }
-    return map;
+    return { byKey, ordered: pokemonList ?? [] };
   }, [pokemonList]);
 }

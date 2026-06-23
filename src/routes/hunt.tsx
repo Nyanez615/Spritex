@@ -7,6 +7,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { RotateCcw } from "lucide-react";
+import { GenerationBadge } from "@/components/GenerationBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,7 +34,7 @@ export const Route = createFileRoute("/hunt")({
 
 function HuntDashboard() {
   const queryClient = useQueryClient();
-  const pokemonById = usePokemonLookup();
+  const { byKey: pokemonById } = usePokemonLookup();
   const { isConfigured: isSyncConfigured, isLoading: syncLoading } =
     useSyncStatus();
 
@@ -139,8 +140,10 @@ function HuntDashboard() {
                           {p?.display_name ?? `#${entry.pokemon_id}`}
                         </Link>
                         {best && (
-                          <p className="text-xs text-muted-foreground">
-                            Best: {GAME_LABELS[best.game]} ·{" "}
+                          <p className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
+                            Best:
+                            <GenerationBadge game={best.game} />
+                            {GAME_LABELS[best.game]} ·{" "}
                             {methodLabel(best)} ·{" "}
                             {formatOdds(
                               entry.has_shiny_charm

@@ -16,6 +16,7 @@ describe("validatePokedexSearch", () => {
       shapes: [],
       growthRates: [],
       abilities: [],
+      forms: [],
       final: false,
       sort: "dex",
       sortDir: "asc",

@@ -15,7 +15,7 @@ export const Route = createFileRoute("/quick-counter")({
 
 function QuickCounter() {
   const queryClient = useQueryClient();
-  const pokemonById = usePokemonLookup();
+  const { byKey: pokemonById } = usePokemonLookup();
   const [index, setIndex] = useState(0);
   const { isConfigured: isSyncConfigured, isLoading: syncLoading } =
     useSyncStatus();

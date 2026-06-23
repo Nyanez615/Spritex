@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
+import { GenerationBadge } from "@/components/GenerationBadge";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -29,7 +30,7 @@ function GameBrowseView() {
   const navigate = useNavigate();
   const game: Game = isGame(gameId) ? gameId : "sv";
 
-  const pokemonById = usePokemonLookup();
+  const { byKey: pokemonById } = usePokemonLookup();
   const { data: methods, isLoading } = useQuery({
     queryKey: ["methods-for-game", game],
     queryFn: () => getMethodsForGame(game),
@@ -51,7 +52,10 @@ function GameBrowseView() {
           <SelectContent>
             {GAME_ORDER.map((g) => (
               <SelectItem key={g} value={g}>
-                {GAME_LABELS[g]}
+                <span className="flex items-center gap-1.5">
+                  <GenerationBadge game={g} />
+                  {GAME_LABELS[g]}
+                </span>
               </SelectItem>
             ))}
           </SelectContent>

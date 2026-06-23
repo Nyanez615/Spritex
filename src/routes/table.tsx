@@ -11,6 +11,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink } from "lucide-react";
+import { GenerationBadge } from "@/components/GenerationBadge";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -42,7 +43,7 @@ function MethodsTable() {
   const [globalFilter, setGlobalFilter] = useState("");
   const [sorting, setSorting] = useState<SortingState>([{ id: "odds_optimized", desc: false }]);
 
-  const pokemonById = usePokemonLookup();
+  const { byKey: pokemonById } = usePokemonLookup();
 
   const { data: methods, isLoading } = useQuery({
     queryKey: ["methods-for-game", game],
@@ -156,7 +157,10 @@ function MethodsTable() {
           <SelectContent>
             {GAME_ORDER.map((g) => (
               <SelectItem key={g} value={g}>
-                {GAME_LABELS[g]}
+                <span className="flex items-center gap-1.5">
+                  <GenerationBadge game={g} />
+                  {GAME_LABELS[g]}
+                </span>
               </SelectItem>
             ))}
           </SelectContent>

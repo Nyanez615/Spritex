@@ -35,11 +35,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { GenerationBadge } from "@/components/GenerationBadge";
 import {
   RequireSync,
   SyncRequiredNotice,
 } from "@/components/SyncRequiredNotice";
+import { usePokemonLookup } from "@/hooks/usePokemonLookup";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
+import { cn } from "@/lib/utils";
 import {
   errorMessage,
   formatGenderRate,
@@ -59,6 +62,7 @@ import {
   computeAllStats,
   DEFAULT_SIMULATOR_INPUTS,
   isDefaultSimulatorInputs,
+  NATURE_MODIFIERS,
   NATURES,
   STAT_KEYS,
   type Nature,
@@ -105,6 +109,34 @@ export const ALL_STATUSES: CollectionStatus[] = [
 const FALLBACK_ERROR =
   "Couldn't load this Pokémon — it may not exist in the static database.";
 
+/** Prev/next detail-page nav arrow — disabled (no Link) at either end of the ordered list. */
+function PokemonNavButton({
+  target,
+  icon: Icon,
+}: {
+  target: Pokemon | undefined;
+  icon: typeof ChevronLeft;
+}) {
+  if (!target) {
+    return (
+      <Button variant="ghost" size="icon-sm" disabled>
+        <Icon className="size-4" />
+      </Button>
+    );
+  }
+  return (
+    <Button asChild variant="ghost" size="icon-sm">
+      <Link
+        to="/pokemon/$id"
+        params={{ id: String(target.id) }}
+        search={{ form: target.form_id }}
+      >
+        <Icon className="size-4" />
+      </Link>
+    </Button>
+  );
+}
+
 function PokemonDetail() {
   // Keyed on the route's own params so every piece of local state below
   // (gallery index, stat-simulator inputs) resets when navigating from one
@@ -121,6 +153,17 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
   const pokemonId = Number(id);
   const formId = form;
   const queryClient = useQueryClient();
+  const { ordered: orderedPokemon } = usePokemonLookup();
+  const { prevPokemon, nextPokemon } = useMemo(() => {
+    const currentIndex = orderedPokemon.findIndex((p) => p.id === pokemonId && p.form_id === formId);
+    return {
+      prevPokemon: currentIndex > 0 ? orderedPokemon[currentIndex - 1] : undefined,
+      nextPokemon:
+        currentIndex !== -1 && currentIndex < orderedPokemon.length - 1
+          ? orderedPokemon[currentIndex + 1]
+          : undefined,
+    };
+  }, [orderedPokemon, pokemonId, formId]);
 
   const {
     data: pokemon,
@@ -227,6 +270,8 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
+        <PokemonNavButton target={prevPokemon} icon={ChevronLeft} />
+        <PokemonNavButton target={nextPokemon} icon={ChevronRight} />
         <h1 className="text-base font-semibold text-foreground">
           {pokemon.display_name}
         </h1>
@@ -488,6 +533,25 @@ function formatEvYield(pokemon: Pokemon): string {
   return nonzero.map(([key, value]) => `+${value} ${STAT_LABELS[key]}`).join(", ");
 }
 
+/** Bulbapedia-style male(blue)/female(pink) ratio bar, reusing the same hex values as the Color profile field's swatches. */
+function GenderRatioBar({ rate }: { rate: number }) {
+  if (rate === -1 || rate === 0 || rate === 8) {
+    return <span className="text-sm">{formatGenderRate(rate)}</span>;
+  }
+  const femalePct = (rate / 8) * 100;
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-2 rounded-full overflow-hidden flex max-w-32">
+        <div style={{ width: `${100 - femalePct}%`, backgroundColor: POKEMON_COLOR_HEX.blue }} />
+        <div style={{ width: `${femalePct}%`, backgroundColor: POKEMON_COLOR_HEX.pink }} />
+      </div>
+      <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+        {Math.round(100 - femalePct)}% / {Math.round(femalePct)}%
+      </span>
+    </div>
+  );
+}
+
 function ProfileSection({
   pokemon,
   types,
@@ -500,27 +564,22 @@ function ProfileSection({
   const eggGroups = parseJsonArray(pokemon.egg_groups);
   const abilities = parseJsonArray<PokemonAbility>(pokemon.abilities);
   const colorHex = POKEMON_COLOR_HEX[pokemon.color];
-  const megaStones = [...new Set(cosmeticForms.map((f) => f.mega_stone_item).filter((s): s is string => s !== null))];
+  const megaStones = useMemo(
+    () => [...new Set(cosmeticForms.map((f) => f.mega_stone_item).filter((s): s is string => s !== null))],
+    [cosmeticForms],
+  );
 
   return (
     <div>
       <h2 className="text-sm font-semibold text-foreground mb-3">Profile</h2>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-w-2xl">
+        {/* Identity */}
         <ProfileField label="Types">
           <div className="flex gap-1.5 flex-wrap">
             {types.map((t) => (
               <TypeBadge key={t} type={t} />
             ))}
           </div>
-        </ProfileField>
-        <ProfileField label="Gender">
-          {formatGenderRate(pokemon.gender_rate)}
-        </ProfileField>
-        <ProfileField label="Height">
-          {(pokemon.height / 10).toFixed(1)} m
-        </ProfileField>
-        <ProfileField label="Weight">
-          {(pokemon.weight / 10).toFixed(1)} kg
         </ProfileField>
         <ProfileField label="Color">
           <span className="flex items-center gap-1.5">
@@ -536,23 +595,31 @@ function ProfileSection({
         <ProfileField label="Shape">
           {pokemon.shape ? humanize(pokemon.shape) : "—"}
         </ProfileField>
-        <ProfileField label="Growth Rate">
-          {humanize(pokemon.growth_rate)}
+
+        {/* Physical */}
+        <ProfileField label="Height">
+          {(pokemon.height / 10).toFixed(1)} m
+        </ProfileField>
+        <ProfileField label="Weight">
+          {(pokemon.weight / 10).toFixed(1)} kg
+        </ProfileField>
+
+        {/* Breeding */}
+        <ProfileField label="Gender">
+          <GenderRatioBar rate={pokemon.gender_rate} />
         </ProfileField>
         <ProfileField label="Egg Groups">
           {eggGroups.length > 0 ? eggGroups.map(humanize).join(", ") : "—"}
+        </ProfileField>
+        <ProfileField label="Growth Rate">
+          {humanize(pokemon.growth_rate)}
         </ProfileField>
         <ProfileField label="Capture Rate">{pokemon.capture_rate}</ProfileField>
         <ProfileField label="Base Happiness">
           {pokemon.base_happiness}
         </ProfileField>
-        <ProfileField label="EXP Yield">{pokemon.base_experience}</ProfileField>
-        <ProfileField label="EV Yield">{formatEvYield(pokemon)}</ProfileField>
-        {megaStones.length > 0 && (
-          <ProfileField label="Mega Stone">
-            {megaStones.map(humanize).join(", ")}
-          </ProfileField>
-        )}
+
+        {/* Battle */}
         <ProfileField label="Abilities">
           {abilities.length > 0 ? (
             abilities.map((a, i) => (
@@ -568,6 +635,13 @@ function ProfileSection({
             "—"
           )}
         </ProfileField>
+        <ProfileField label="EXP Yield">{pokemon.base_experience}</ProfileField>
+        <ProfileField label="EV Yield">{formatEvYield(pokemon)}</ProfileField>
+        {megaStones.length > 0 && (
+          <ProfileField label="Mega Stone">
+            {megaStones.map(humanize).join(", ")}
+          </ProfileField>
+        )}
       </div>
     </div>
   );
@@ -584,6 +658,14 @@ const STAT_LABELS: Record<StatKey, string> = {
   speed: "Speed",
 };
 const EV_TOTAL_CAP = 510;
+/** Official blue (boosted) / red (lowered) for the selected nature's effect on a stat bar — undefined (neutral) otherwise. HP is never affected by nature. */
+function natureStatColor(nature: Nature, key: StatKey): string | undefined {
+  if (key === "hp") return undefined;
+  const mod = NATURE_MODIFIERS[nature];
+  if (mod.boost === key) return POKEMON_COLOR_HEX.blue;
+  if (mod.lower === key) return POKEMON_COLOR_HEX.red;
+  return undefined;
+}
 /** Ability-name keys as PokéAPI spells them (kebab-case) — must match abilities JSON, not the display label. */
 const STAT_ABILITY_NAMES: Record<
   Exclude<StatModifierAbility, "none">,
@@ -811,24 +893,28 @@ export function StatsSection({ pokemon }: { pokemon: Pokemon }) {
       )}
 
       <div className="space-y-1.5 max-w-md">
-        {STAT_KEYS.map((key) => (
-          <div key={key} className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground w-16 shrink-0">
-              {STAT_LABELS[key]}
-            </span>
-            <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full bg-primary rounded-full"
-                style={{
-                  width: `${Math.min(100, (computed[key] / STAT_BAR_MAX) * 100)}%`,
-                }}
-              />
+        {STAT_KEYS.map((key) => {
+          const barColor = natureStatColor(sim.nature, key);
+          return (
+            <div key={key} className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground w-16 shrink-0">
+                {STAT_LABELS[key]}
+              </span>
+              <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={cn("h-full rounded-full", !barColor && "bg-primary")}
+                  style={{
+                    width: `${Math.min(100, (computed[key] / STAT_BAR_MAX) * 100)}%`,
+                    backgroundColor: barColor,
+                  }}
+                />
+              </div>
+              <span className="text-xs text-foreground w-10 text-right tabular-nums">
+                {computed[key]}
+              </span>
             </div>
-            <span className="text-xs text-foreground w-10 text-right tabular-nums">
-              {computed[key]}
-            </span>
-          </div>
-        ))}
+          );
+        })}
         <div className="flex items-center gap-2 pt-1.5 mt-1 border-t border-border/50">
           <span className="text-xs font-medium text-foreground w-16 shrink-0">
             Total
@@ -852,6 +938,7 @@ function MethodRow({ method }: { method: ShinyMethod }) {
       <CardContent className="flex items-center gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
+            <GenerationBadge game={method.game} />
             <span className="font-medium text-foreground">
               {GAME_LABELS[method.game]}
             </span>
@@ -1016,7 +1103,10 @@ export function CollectionPanel({
                     <SelectContent>
                       {methods.map((m) => (
                         <SelectItem key={m.id} value={String(m.id)}>
-                          {GAME_LABELS[m.game]} — {methodLabel(m)}
+                          <span className="flex items-center gap-1.5">
+                            <GenerationBadge game={m.game} />
+                            {GAME_LABELS[m.game]} — {methodLabel(m)}
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>

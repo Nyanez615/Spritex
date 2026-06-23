@@ -122,6 +122,7 @@ export type PokedexSearch = Partial<{
   shapes: string[];
   growthRates: string[];
   abilities: string[];
+  forms: string[];
   final: boolean;
   sort: SortKey;
   sortDir: SortDir;
@@ -144,6 +145,7 @@ export function validatePokedexSearch(search: Record<string, unknown>): PokedexS
     shapes: arrayOf<string>(search.shapes),
     growthRates: arrayOf<string>(search.growthRates),
     abilities: arrayOf<string>(search.abilities),
+    forms: arrayOf<string>(search.forms),
     final: search.final === true,
     sort,
     sortDir: search.sortDir === "asc" || search.sortDir === "desc" ? search.sortDir : DEFAULT_SORT_DIRECTION[sort],
@@ -160,11 +162,11 @@ function PokedexGrid() {
   const rawSearch = Route.useSearch();
   const {
     q = "", types = [], colors = [], gens = [], rarity = [], gender = [],
-    eggGroups = [], shapes = [], growthRates = [], abilities = [], final = false, sort = "dex",
+    eggGroups = [], shapes = [], growthRates = [], abilities = [], forms = [], final = false, sort = "dex",
     sortDir = DEFAULT_SORT_DIRECTION[sort],
   } = rawSearch;
   const search: Required<PokedexSearch> = {
-    q, types, colors, gens, rarity, gender, eggGroups, shapes, growthRates, abilities, final, sort, sortDir,
+    q, types, colors, gens, rarity, gender, eggGroups, shapes, growthRates, abilities, forms, final, sort, sortDir,
   };
 
   const { data: pokemon, isLoading, error } = useQuery({
@@ -191,6 +193,7 @@ function PokedexGrid() {
   const selectedShapes = useMemo(() => new Set(shapes), [shapes]);
   const selectedGrowthRates = useMemo(() => new Set(growthRates), [growthRates]);
   const selectedAbilities = useMemo(() => new Set(abilities), [abilities]);
+  const selectedForms = useMemo(() => new Set(forms), [forms]);
 
   // Every form of every species, independent of active filters — the forms
   // preview always shows the full picture regardless of what's currently filtered.
@@ -227,6 +230,10 @@ function PokedexGrid() {
       ).sort(),
     [pokemon],
   );
+  const formOptions = useMemo(
+    () => Array.from(new Set((pokemon ?? []).map((p) => p.form_name).filter((f): f is string => f !== null))).sort(),
+    [pokemon],
+  );
 
   const filtered = useMemo(
     () =>
@@ -247,12 +254,13 @@ function PokedexGrid() {
         if (selectedShapes.size && (!p.shape || !selectedShapes.has(p.shape))) return false;
         if (selectedGrowthRates.size && !selectedGrowthRates.has(p.growth_rate)) return false;
         if (selectedAbilities.size && !parseJsonArray<PokemonAbility>(p.abilities).some((a) => selectedAbilities.has(a.name))) return false;
+        if (selectedForms.size && (!p.form_name || !selectedForms.has(p.form_name))) return false;
         if (final && !p.is_final_evolution) return false;
         return true;
       }),
     [
       pokemon, q, selectedGens, selectedRarity, selectedGender, selectedTypes, selectedColors,
-      selectedEggGroups, selectedShapes, selectedGrowthRates, selectedAbilities, final,
+      selectedEggGroups, selectedShapes, selectedGrowthRates, selectedAbilities, selectedForms, final,
     ],
   );
 
@@ -307,6 +315,42 @@ function PokedexGrid() {
     overscan: 4,
   });
 
+  // Scroll-position restore: filters/sort already round-trip through the URL
+  // (search params), but the virtualizer's own scroll offset doesn't — a
+  // fresh mount always starts at 0. Persist per exact filter/sort
+  // combination (not just the route) so returning to the same view restores
+  // where the user was, while a genuinely different filter combination
+  // starts fresh rather than landing at a stale unrelated offset. Tracks
+  // *which keys* have been restored this mount (not a single boolean) so
+  // switching filters away and back within one session still restores —
+  // a plain "restore once per mount" flag would only ever fire for the
+  // first filter combination seen.
+  const scrollKey = `pokedex-scroll:${JSON.stringify(search)}`;
+  const restoredKeys = useRef(new Set<string>());
+  useEffect(() => {
+    if (restoredKeys.current.has(scrollKey) || rows.length === 0) return;
+    restoredKeys.current.add(scrollKey);
+    const saved = sessionStorage.getItem(scrollKey);
+    if (saved) virtualizer.scrollToOffset(Number(saved), { align: "start" });
+  }, [scrollKey, rows.length, virtualizer]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let timeout: ReturnType<typeof setTimeout>;
+    const save = () => sessionStorage.setItem(scrollKey, String(el.scrollTop));
+    const onScroll = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(save, 150);
+    };
+    el.addEventListener("scroll", onScroll);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      clearTimeout(timeout);
+      save(); // flush the last position instead of dropping it on filter change/unmount
+    };
+  }, [scrollKey]);
+
   const hasActiveFilters =
     q.length > 0 ||
     selectedTypes.size > 0 ||
@@ -318,12 +362,13 @@ function PokedexGrid() {
     selectedShapes.size > 0 ||
     selectedGrowthRates.size > 0 ||
     selectedAbilities.size > 0 ||
+    selectedForms.size > 0 ||
     final;
 
   function clearAllFilters() {
     updateSearch({
       q: "", types: [], colors: [], gens: [], rarity: [], gender: [],
-      eggGroups: [], shapes: [], growthRates: [], abilities: [], final: false,
+      eggGroups: [], shapes: [], growthRates: [], abilities: [], forms: [], final: false,
     });
   }
 
@@ -337,7 +382,7 @@ function PokedexGrid() {
         search={search}
         updateSearch={updateSearch}
         toggleInArray={toggleInArray}
-        options={{ generationOptions, eggGroupOptions, shapeOptions, growthRateOptions, abilityOptions }}
+        options={{ generationOptions, eggGroupOptions, shapeOptions, growthRateOptions, abilityOptions, formOptions }}
         hasActiveFilters={hasActiveFilters}
         clearAllFilters={clearAllFilters}
         resultCount={sortedCards.length}
@@ -417,13 +462,14 @@ function PokedexFilterBar({
     shapeOptions: string[];
     growthRateOptions: string[];
     abilityOptions: string[];
+    formOptions: string[];
   };
   hasActiveFilters: boolean;
   clearAllFilters: () => void;
   resultCount: number;
   totalCount: number;
 }) {
-  const { q, types, colors, gens, rarity, gender, eggGroups, shapes, growthRates, abilities, final, sort, sortDir } =
+  const { q, types, colors, gens, rarity, gender, eggGroups, shapes, growthRates, abilities, forms, final, sort, sortDir } =
     search;
   const [abilitiesOpen, setAbilitiesOpen] = useState(false);
   const { isConfigured: isSyncConfigured, isLoading: syncLoading } = useSyncStatus();
@@ -498,6 +544,14 @@ function PokedexFilterBar({
     onToggle: (label) => toggleInArray("growthRates", growthRates, rawFromHumanized(options.growthRateOptions, label)),
     onClear: () => updateSearch({ growthRates: [] }),
   };
+  const formGroup: FilterGroup = {
+    key: "form",
+    label: "Regional Variant",
+    items: options.formOptions.map(humanize),
+    active: forms.map(humanize),
+    onToggle: (label) => toggleInArray("forms", forms, rawFromHumanized(options.formOptions, label)),
+    onClear: () => updateSearch({ forms: [] }),
+  };
 
   return (
     <div>
@@ -560,7 +614,7 @@ function PokedexFilterBar({
         leading={<RegionCaption>Appearance</RegionCaption>}
       />
       <FilterBar
-        groups={[generationGroup, rarityGroup, genderGroup, eggGroupGroup, growthRateGroup]}
+        groups={[generationGroup, rarityGroup, genderGroup, eggGroupGroup, growthRateGroup, formGroup]}
         leading={<RegionCaption>Classification</RegionCaption>}
         trailing={
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">

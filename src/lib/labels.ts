@@ -69,6 +69,79 @@ export const GAME_LABELS: Record<Game, string> = {
   go: "GO",
 };
 
+/**
+ * Generation per game, for the colored "Gen N" badge wherever a game is
+ * mentioned (game logos are deliberately not used — confirmed no open-
+ * licensed source exists; see the project's CLAUDE.md). Mainline games map
+ * 1:1 to their own generation; `go` has none (a live-service game spanning
+ * every generation's roster, not tied to one) and renders no badge.
+ *
+ * The Ranger-series/Dream World/Dream Radar spin-offs are NOT a simple
+ * "current mainline generation at release" mapping — every value below is
+ * confirmed directly against each game's own Bulbapedia infobox ("Part of:
+ * Generation X spin-off Pokémon games"), not assumed from this app's own
+ * Game enum declaration order (which groups `ranger` near gen4_hgss
+ * positionally — verified that grouping is misleading: Pokémon Ranger
+ * (2006) predates Diamond/Pearl's own release that same year, so
+ * Bulbapedia's infobox classifies it Generation III, not IV). Colosseum/XD
+ * confirmed Generation III the same way. Shadows of Almia and Guardian
+ * Signs are both confirmed Generation IV. Dream World is confirmed
+ * Generation V — it opened September 18, 2010, the same day as Black/
+ * White's Japan release, not before it as a naive release-date guess might
+ * suggest.
+ */
+export const GAME_GENERATIONS: Record<Game, number | null> = {
+  gen1_vc: 1,
+  gen2_vc: 2,
+  gen3_rs: 3,
+  gen3_e: 3,
+  gen3_frlg: 3,
+  colosseum: 3,
+  xd: 3,
+  gen4_dp: 4,
+  gen4_pt: 4,
+  gen4_hgss: 4,
+  ranger: 3,
+  ranger_soa: 4,
+  dream_world: 5,
+  dream_radar: 5,
+  ranger_gs: 4,
+  gen5_bw: 5,
+  gen5_b2_w2: 5,
+  gen6_xy: 6,
+  gen6_oras: 6,
+  gen7_sm: 7,
+  gen7_usum: 7,
+  lgpe: 7,
+  swsh: 8,
+  bdsp: 8,
+  pla: 8,
+  sv: 9,
+  legends_za: 9,
+  go: null,
+};
+
+/**
+ * Distinct color per generation for the "Gen N" badge — a styling
+ * convention, not a cited game-mechanic fact, same rationale as
+ * TYPE_COLORS. Deliberately a different palette (D3's "category10", a
+ * standard distinct-categorical set) rather than reusing TYPE_COLORS' hex
+ * values — generation and type are unrelated axes that can appear side by
+ * side on the same row (e.g. MethodRow), so they shouldn't visually imply
+ * a connection that doesn't exist.
+ */
+export const GENERATION_COLORS: Record<number, string> = {
+  1: "#1F77B4",
+  2: "#FF7F0E",
+  3: "#2CA02C",
+  4: "#D62728",
+  5: "#9467BD",
+  6: "#8C564B",
+  7: "#E377C2",
+  8: "#7F7F7F",
+  9: "#BCBD22",
+};
+
 export const METHOD_LABELS: Record<Method, string> = {
   wild: "Wild Encounter",
   soft_reset: "Soft Reset",

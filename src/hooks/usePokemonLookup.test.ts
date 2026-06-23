@@ -14,14 +14,22 @@ describe("usePokemonLookup", () => {
   it("builds a Map keyed by id-form_id from the fetched list", async () => {
     const { result } = renderHook(() => usePokemonLookup(), { wrapper: createQueryClientWrapper() });
 
-    await waitFor(() => expect(result.current.size).toBe(2));
+    await waitFor(() => expect(result.current.byKey.size).toBe(2));
 
-    expect(result.current.get("1-0")).toMatchObject({ display_name: "Bulbasaur" });
-    expect(result.current.get("1-1")).toMatchObject({ display_name: "Some Form" });
+    expect(result.current.byKey.get("1-0")).toMatchObject({ display_name: "Bulbasaur" });
+    expect(result.current.byKey.get("1-1")).toMatchObject({ display_name: "Some Form" });
   });
 
   it("returns an empty Map before the query resolves", () => {
     const { result } = renderHook(() => usePokemonLookup(), { wrapper: createQueryClientWrapper() });
-    expect(result.current.size).toBe(0);
+    expect(result.current.byKey.size).toBe(0);
+  });
+
+  it("also exposes the list in its original (id, form_id) order via `ordered`", async () => {
+    const { result } = renderHook(() => usePokemonLookup(), { wrapper: createQueryClientWrapper() });
+
+    await waitFor(() => expect(result.current.ordered.length).toBe(2));
+
+    expect(result.current.ordered.map((p) => p.display_name)).toEqual(["Bulbasaur", "Some Form"]);
   });
 });
