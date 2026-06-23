@@ -32,7 +32,7 @@ const BULBASAUR: Pokemon = {
   base_happiness: 70,
   height: 7,
   weight: 69,
-  abilities: '["overgrow","chlorophyll"]',
+  abilities: '[{"name":"overgrow","isHidden":false},{"name":"chlorophyll","isHidden":true}]',
   stat_hp: 231,
   stat_attack: 134,
   stat_defense: 134,
@@ -40,6 +40,13 @@ const BULBASAUR: Pokemon = {
   stat_special_defense: 166,
   stat_speed: 126,
   stat_total: 957,
+  base_experience: 64,
+  ev_yield_hp: 0,
+  ev_yield_attack: 0,
+  ev_yield_defense: 0,
+  ev_yield_special_attack: 1,
+  ev_yield_special_defense: 0,
+  ev_yield_speed: 0,
 };
 
 describe("SpriteGalleryDialog", () => {
@@ -167,7 +174,7 @@ describe("StatsSection", () => {
   });
 
   it("shows the Ability control for a species with Huge Power, labeled as 'Huge Power' not the raw underscore key", () => {
-    const azumarill = { ...BULBASAUR, abilities: '["huge-power","thick-fat"]' };
+    const azumarill = { ...BULBASAUR, abilities: '[{"name":"huge-power","isHidden":false},{"name":"thick-fat","isHidden":true}]' };
     render(<StatsSection pokemon={azumarill} />);
     fireEvent.click(screen.getByText("Customize"));
     expect(screen.getByLabelText("Ability")).toBeInTheDocument();

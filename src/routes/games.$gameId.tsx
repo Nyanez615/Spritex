@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { usePokemonLookup } from "@/hooks/usePokemonLookup";
 import { formatOdds } from "@/lib/format";
-import { GAME_LABELS, GAME_ORDER, METHOD_LABELS } from "@/lib/labels";
+import { GAME_LABELS, GAME_ORDER, methodLabel } from "@/lib/labels";
 import { getMethodsForGame, type Game } from "@/lib/tauri";
 
 export const Route = createFileRoute("/games/$gameId")({
@@ -90,7 +90,7 @@ function GameBrowseView() {
                       </span>
                       {m.is_best_method && <Badge>Best</Badge>}
                     </div>
-                    <p className="text-xs text-muted-foreground">{METHOD_LABELS[m.method]}</p>
+                    <p className="text-xs text-muted-foreground">{methodLabel(m)}</p>
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-semibold text-foreground">{formatOdds(m.odds_optimized)}</p>

@@ -108,6 +108,8 @@ pub fn seed_static_db(rows: &[TestPokemonRow]) -> Connection {
         .expect("apply 001_pokemon.sql");
     conn.execute_batch(include_str!("../migrations/static/002_shiny_methods.sql"))
         .expect("apply 002_shiny_methods.sql");
+    conn.execute_batch(include_str!("../migrations/static/003_cosmetic_forms.sql"))
+        .expect("apply 003_cosmetic_forms.sql");
 
     for row in rows {
         let display_name = if row.display_name.is_empty() { row.name.clone() } else { row.display_name.clone() };
@@ -116,8 +118,10 @@ pub fn seed_static_db(rows: &[TestPokemonRow]) -> Connection {
                 id, form_id, name, display_name, generation, sprite_url, shiny_sprite_url, types,
                 gender_rate, is_mythical, is_legendary, is_baby, is_final_evolution, color,
                 growth_rate, egg_groups, capture_rate, base_happiness, height, weight, abilities,
-                stat_hp, stat_attack, stat_defense, stat_special_attack, stat_special_defense, stat_speed, stat_total
-            ) VALUES (?1, ?2, ?3, ?4, ?5, '', '', '[]', 1, ?6, ?7, 0, 0, '', '', '[]', 45, 70, 10, 100, '[]', 1, 1, 1, 1, 1, 1, 6)",
+                stat_hp, stat_attack, stat_defense, stat_special_attack, stat_special_defense, stat_speed, stat_total,
+                base_experience, ev_yield_hp, ev_yield_attack, ev_yield_defense,
+                ev_yield_special_attack, ev_yield_special_defense, ev_yield_speed
+            ) VALUES (?1, ?2, ?3, ?4, ?5, '', '', '[]', 1, ?6, ?7, 0, 0, '', '', '[]', 45, 70, 10, 100, '[]', 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 0, 0, 0, 0)",
             rusqlite::params![
                 row.id, row.form_id, row.name, display_name, row.generation,
                 row.is_mythical as i32, row.is_legendary as i32,
@@ -129,7 +133,6 @@ pub fn seed_static_db(rows: &[TestPokemonRow]) -> Connection {
     conn
 }
 
-#[derive(Default)]
 pub struct TestShinyMethodRow {
     pub pokemon_id: i32,
     pub form_id: i32,
@@ -137,6 +140,21 @@ pub struct TestShinyMethodRow {
     pub method: String,
     pub odds_optimized: i32,
     pub is_best_method: bool,
+    pub is_wild_encounter: bool,
+}
+
+impl Default for TestShinyMethodRow {
+    fn default() -> Self {
+        Self {
+            pokemon_id: 0,
+            form_id: 0,
+            game: String::new(),
+            method: String::new(),
+            odds_optimized: 0,
+            is_best_method: false,
+            is_wild_encounter: true,
+        }
+    }
 }
 
 pub fn seed_shiny_methods(conn: &Connection, rows: &[TestShinyMethodRow]) {
@@ -144,13 +162,37 @@ pub fn seed_shiny_methods(conn: &Connection, rows: &[TestShinyMethodRow]) {
         conn.execute(
             "INSERT INTO shiny_methods (
                 pokemon_id, form_id, game, method, odds_base, odds_charm, odds_optimized,
-                boost_requirements, is_best_method, requires_transfer, citation_url
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?5, '[]', ?6, 0, '')",
+                boost_requirements, is_best_method, is_wild_encounter, requires_transfer, citation_url
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?5, '[]', ?6, ?7, 0, '')",
             rusqlite::params![
-                row.pokemon_id, row.form_id, row.game, row.method, row.odds_optimized, row.is_best_method as i32,
+                row.pokemon_id, row.form_id, row.game, row.method, row.odds_optimized,
+                row.is_best_method as i32, row.is_wild_encounter as i32,
             ],
         )
         .expect("insert test shiny_methods row");
+    }
+}
+
+#[derive(Default)]
+pub struct TestCosmeticFormRow {
+    pub pokemon_id: i32,
+    pub form_id: i32,
+    pub kind: String,
+    pub display_name: String,
+    pub mega_stone_item: Option<String>,
+}
+
+pub fn seed_cosmetic_forms(conn: &Connection, rows: &[TestCosmeticFormRow]) {
+    for row in rows {
+        conn.execute(
+            "INSERT INTO cosmetic_forms (
+                pokemon_id, form_id, kind, display_name, sprite_url, shiny_sprite_url, mega_stone_item
+            ) VALUES (?1, ?2, ?3, ?4, '', '', ?5)",
+            rusqlite::params![
+                row.pokemon_id, row.form_id, row.kind, row.display_name, row.mega_stone_item,
+            ],
+        )
+        .expect("insert test cosmetic_forms row");
     }
 }
 

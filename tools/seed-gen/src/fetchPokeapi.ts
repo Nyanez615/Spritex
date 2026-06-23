@@ -15,6 +15,7 @@
  * newest games where PokéAPI's own encounter data is known-incomplete.
  */
 import { cachedJson, ConcurrencyLimiter, writeOutJson } from "./httpCache.js";
+import { fetchMegaStoneMap } from "./megaStones.js";
 
 const POKEAPI_BASE = "https://pokeapi.co/api/v2";
 
@@ -81,10 +82,11 @@ interface PokeApiPokemon {
   name: string;
   height: number;
   weight: number;
+  base_experience: number | null;
   types: Array<{ slot: number; type: PokeApiNamedResource }>;
   sprites: PokeApiSprites;
   forms: PokeApiNamedResource[];
-  stats: Array<{ base_stat: number; stat: PokeApiNamedResource }>;
+  stats: Array<{ base_stat: number; effort: number; stat: PokeApiNamedResource }>;
   abilities: Array<{ ability: PokeApiNamedResource; is_hidden: boolean }>;
 }
 
@@ -107,7 +109,7 @@ export interface FetchedVariety {
   shinySpriteUrlFemale: string | null;
   height: number;
   weight: number;
-  abilities: string[];
+  abilities: Array<{ name: string; isHidden: boolean }>;
   /**
    * Base stats computed at level 100 with max neutral IVs (31), 0 EVs, neutral
    * nature — Bulbapedia's standard Gen 3+ stat formula collapses to
@@ -121,6 +123,36 @@ export interface FetchedVariety {
   statSpecialDefense: number;
   statSpeed: number;
   statTotal: number;
+  /** PokéAPI's `base_experience` — null for a handful of entries with no battle data. */
+  baseExperience: number;
+  /** EV yield per stat — PokéAPI's `stats[].effort`, raw (not the level-100 statAt100 transform above). */
+  evYieldHp: number;
+  evYieldAttack: number;
+  evYieldDefense: number;
+  evYieldSpecialAttack: number;
+  evYieldSpecialDefense: number;
+  evYieldSpeed: number;
+}
+
+export type CosmeticFormKind = "mega" | "mega_x" | "mega_y" | "gmax";
+
+/**
+ * Mega Evolution / Gigantamax — cosmetic battle forms, not distinct dex
+ * entries (same reasoning that already excludes them from `varieties`):
+ * Mega reverts after battle and Gigantamax doesn't change a species'
+ * shininess, so neither needs its own shiny-method rows. Captured purely
+ * for sprite display + (mega only) the required held item.
+ */
+export interface FetchedCosmeticForm {
+  pokemonId: number;
+  /** Which varieties[].formId this attaches to — always 0; no released game pairs Mega/Gmax with a regional form. */
+  baseFormId: number;
+  kind: CosmeticFormKind;
+  displayName: string;
+  spriteUrl: string;
+  shinySpriteUrl: string;
+  /** PokéAPI item slug, e.g. "venusaurite" — null for Gigantamax (no held item). */
+  megaStoneItem: string | null;
 }
 
 export interface FetchedSpecies {
@@ -134,7 +166,19 @@ export interface FetchedSpecies {
   isBaby: boolean;
   isBreedable: boolean;
   color: string;
-  /** Null for a handful of legacy species PokéAPI never assigned a shape to. */
+  /**
+   * Null for a handful of legacy species PokéAPI never assigned a shape to.
+   * Text only, deliberately not an icon — verified during implementation
+   * that neither PokéAPI nor a CC0 source has shape-silhouette icon sprites
+   * (the `/pokemon-shape/{id}` endpoint exposes only names, no sprite field;
+   * checked live). Real footprint/shape icons exist on Bulbagarden Archives
+   * (e.g. "F0252gen2.png"), but those are extracted in-game UI assets with
+   * no confirmed open license — same "fair use" risk class already
+   * confirmed for game box art/logos (see the Game-badge IP discussion),
+   * not PokéAPI's CC0 sprite repo. Don't add icon sprites for shape or
+   * footprint without first finding (and citing) an actually CC0/openly-
+   * licensed source — none is known to exist as of this writing.
+   */
   shape: string | null;
   growthRate: string;
   eggGroups: string[];
@@ -195,7 +239,38 @@ function extractStats(stats: PokeApiPokemon["stats"]): Pick<FetchedVariety, "sta
   };
 }
 
-async function fetchVarietyDetail(limiter: ConcurrencyLimiter, variety: { is_default: boolean; pokemon: PokeApiNamedResource }, fallbackDisplayName: string, formIndex: number): Promise<FetchedVariety | undefined> {
+/** EV (effort value) yield per stat — raw PokéAPI `effort`, distinct from the level-100 statAt100 transform above. */
+function extractEvYield(stats: PokeApiPokemon["stats"]): Pick<FetchedVariety, "evYieldHp" | "evYieldAttack" | "evYieldDefense" | "evYieldSpecialAttack" | "evYieldSpecialDefense" | "evYieldSpeed"> {
+  const effort = (name: string) => stats.find((s) => s.stat.name === name)?.effort ?? 0;
+  return {
+    evYieldHp: effort("hp"),
+    evYieldAttack: effort("attack"),
+    evYieldDefense: effort("defense"),
+    evYieldSpecialAttack: effort("special-attack"),
+    evYieldSpecialDefense: effort("special-defense"),
+    evYieldSpeed: effort("speed"),
+  };
+}
+
+/** Determines a cosmetic form's kind from its PokéAPI form flags — undefined for any other battle-only cosmetic (Crowned Sword/Shield, Eternamax, Zen Mode, ...), which stays unmodeled, same as before this feature existed. */
+function cosmeticFormKind(form: PokeApiForm): CosmeticFormKind | undefined {
+  if (form.is_mega) {
+    if (form.form_name === "mega-x") return "mega_x";
+    if (form.form_name === "mega-y") return "mega_y";
+    return "mega";
+  }
+  if (form.form_name === "gmax") return "gmax";
+  return undefined;
+}
+
+async function fetchVarietyDetail(
+  limiter: ConcurrencyLimiter,
+  variety: { is_default: boolean; pokemon: PokeApiNamedResource },
+  fallbackDisplayName: string,
+  formIndex: number,
+  speciesName: string,
+  megaStoneMap: Map<string, string>,
+): Promise<{ variety?: FetchedVariety; cosmeticForm?: FetchedCosmeticForm }> {
   const pokemon = await limiter.run(() => cachedJson<PokeApiPokemon>("pokeapi-pokemon", variety.pokemon.name, variety.pokemon.url));
   const shared = {
     types: pokemon.types.map((t) => t.type.name),
@@ -205,39 +280,61 @@ async function fetchVarietyDetail(limiter: ConcurrencyLimiter, variety: { is_def
     shinySpriteUrlFemale: femaleSprite(pokemon.sprites, true),
     height: pokemon.height,
     weight: pokemon.weight,
-    abilities: pokemon.abilities.map((a) => a.ability.name),
+    abilities: pokemon.abilities.map((a) => ({ name: a.ability.name, isHidden: a.is_hidden })),
     ...extractStats(pokemon.stats),
+    baseExperience: pokemon.base_experience ?? 0,
+    ...extractEvYield(pokemon.stats),
   };
 
   if (!variety.is_default) {
     const formRef = pokemon.forms[0];
-    if (!formRef) return undefined;
+    if (!formRef) return {};
     const form = await limiter.run(() => cachedJson<PokeApiForm>("pokeapi-form", formRef.name, formRef.url));
-    if (form.is_battle_only || form.is_mega) return undefined; // Mega/Gmax/battle-only — not a distinct dex entry
+    if (form.is_battle_only || form.is_mega) {
+      const kind = cosmeticFormKind(form);
+      if (!kind) return {}; // other battle-only cosmetic (Crowned, Eternamax, ...) — not modeled
+      return {
+        cosmeticForm: {
+          pokemonId: 0, // filled in by the caller, which knows the species id
+          baseFormId: 0,
+          kind,
+          displayName: englishName(form.names, pokemon.name),
+          spriteUrl: bestSprite(pokemon.sprites, false),
+          shinySpriteUrl: bestSprite(pokemon.sprites, true),
+          megaStoneItem: kind === "gmax" ? null : megaStoneMap.get(`${speciesName}:${kind}`) ?? null,
+        },
+      };
+    }
     const formDisplayName = englishName(form.names, pokemon.name);
     const adjective = REGIONAL_ADJECTIVES.find((prefix) => formDisplayName.startsWith(prefix));
-    if (!adjective) return undefined; // cosmetic-only variant (pattern/cap/season/etc.) — not modeled
+    if (!adjective) return {}; // cosmetic-only variant (pattern/cap/season/etc.) — not modeled
 
     return {
-      formId: formIndex,
-      formName: adjective.trim(),
-      displayName: formDisplayName,
-      ...shared,
+      variety: {
+        formId: formIndex,
+        formName: adjective.trim(),
+        displayName: formDisplayName,
+        ...shared,
+      },
     };
   }
 
   return {
-    formId: 0,
-    formName: null,
-    displayName: fallbackDisplayName,
-    ...shared,
+    variety: {
+      formId: 0,
+      formName: null,
+      displayName: fallbackDisplayName,
+      ...shared,
+    },
   };
 }
 
-export async function fetchAllSpecies(): Promise<FetchedSpecies[]> {
+export async function fetchAllSpecies(): Promise<{ species: FetchedSpecies[]; cosmeticForms: FetchedCosmeticForm[] }> {
   const list = await cachedJson<PokeApiSpeciesList>("pokeapi-species-list", "all", `${POKEAPI_BASE}/pokemon-species?limit=2000`);
   const limiter = new ConcurrencyLimiter(8);
+  const megaStoneMap = await fetchMegaStoneMap();
   const out: FetchedSpecies[] = [];
+  const cosmeticForms: FetchedCosmeticForm[] = [];
 
   const limit = process.env.SEED_GEN_LIMIT ? Number(process.env.SEED_GEN_LIMIT) : undefined;
   const targets = limit ? list.results.slice(0, limit) : list.results;
@@ -259,10 +356,15 @@ export async function fetchAllSpecies(): Promise<FetchedSpecies[]> {
       const varieties: FetchedVariety[] = [];
       let formIndex = 1;
       for (const variety of species.varieties) {
-        const detail = await fetchVarietyDetail(limiter, variety, displayName, variety.is_default ? 0 : formIndex);
+        const { variety: detail, cosmeticForm } = await fetchVarietyDetail(
+          limiter, variety, displayName, variety.is_default ? 0 : formIndex, species.name, megaStoneMap,
+        );
         if (detail) {
           varieties.push(detail);
           if (!variety.is_default) formIndex++;
+        }
+        if (cosmeticForm) {
+          cosmeticForms.push({ ...cosmeticForm, pokemonId: species.id });
         }
       }
       varieties.sort((a, b) => a.formId - b.formId);
@@ -293,14 +395,16 @@ export async function fetchAllSpecies(): Promise<FetchedSpecies[]> {
   );
 
   out.sort((a, b) => a.pokemonId - b.pokemonId);
-  return out;
+  cosmeticForms.sort((a, b) => a.pokemonId - b.pokemonId);
+  return { species: out, cosmeticForms };
 }
 
 export async function runFetchPokeapi(): Promise<FetchedSpecies[]> {
   console.log(`fetchPokeapi: fetching species metadata from PokéAPI...`);
-  const species = await fetchAllSpecies();
+  const { species, cosmeticForms } = await fetchAllSpecies();
   await writeOutJson("species.json", species);
-  console.log(`fetchPokeapi: wrote ${species.length} species to out/species.json`);
+  await writeOutJson("cosmetic-forms-raw.json", cosmeticForms);
+  console.log(`fetchPokeapi: wrote ${species.length} species to out/species.json, ${cosmeticForms.length} cosmetic forms to out/cosmetic-forms-raw.json`);
   return species;
 }
 

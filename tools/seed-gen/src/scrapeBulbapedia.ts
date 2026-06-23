@@ -83,6 +83,14 @@ export interface AvailabilityFact {
   game: Game;
   /** True unless the area= text signals a gift/static/trade/evolution/hatch-only path — see isWildSegment. */
   isWild: boolean;
+  /**
+   * True unless the area= text signals a wild-but-non-chainable path (Friend
+   * Safari mentioned as plain text, Grand Underground Hideaways) — see
+   * isChainableSegment. Always false when isWild is false (non-wild implies
+   * non-chainable); the reverse isn't true — isWild can be true while this
+   * is false.
+   */
+  isChainable: boolean;
 }
 
 export interface AvailabilityOutput {
@@ -158,11 +166,8 @@ function resolveAnnotation(
  * Bulbapedia uses across ~1080 species. A repeatable static encounter
  * phrased without a link to the event-Pokémon catalog would be
  * misclassified as wild (rare — most static encounters Bulbapedia tracks do
- * use that link); a mainline game's own area text mentioning "Friend
- * Safari" as an alternate location isn't specifically checked for either
- * (distinct from the separate Friend-Safari-roster mechanism in
- * deriveShinyMethods.ts, which is already handled). Don't add markers for
- * cases not yet confirmed against a real page.
+ * use that link). Don't add markers for cases not yet confirmed against a
+ * real page.
  */
 const NON_WILD_MARKERS = [
   /\[\[List of in-game event Pokémon/i, // covers both "Received" gifts and "(Only one)" statics
@@ -175,6 +180,39 @@ const NON_WILD_MARKERS = [
 
 function isWildSegment(segmentText: string): boolean {
   return !NON_WILD_MARKERS.some((re) => re.test(segmentText));
+}
+
+/**
+ * Segments that ARE wild in the isWild sense (a real roaming encounter, not
+ * a gift/trade/evolution/hatch) but aren't a *chainable* Route/cave
+ * encounter — Pokéradar/chain-fishing/DexNav/SOS/Catch Combo/Mass Outbreak/
+ * Brilliant Pokémon (deriveShinyMethods.ts's WILD_ONLY_METHODS) all require
+ * grinding the same standard overworld grass/water/cave encounter table, not
+ * a restricted-roster or alternate-mechanic location. Two confirmed cases,
+ * each verified against a live Bulbapedia page rather than assumed:
+ * - Friend Safari mentioned as plain area= text (distinct from the separate
+ *   Friend-Safari-roster mechanism in deriveShinyMethods.ts, which never
+ *   touches wildness at all): Ivysaur's X/Y entry is *only*
+ *   "Friend Safari (Grass type Safari)" — no Route/fishing encounter — yet
+ *   was incorrectly granting Chain Fishing/Chain Radar before this marker
+ *   existed.
+ * - Grand Underground (BDSP): per Bulbapedia's own Grand Underground article,
+ *   Hideaway encounters are "unlike the main overworld... symbol
+ *   encounters" — a distinct mechanic from the tall-grass encounters
+ *   Bulbapedia's Poké Radar article says the Radar specifically requires
+ *   ("in tall grass, while on foot"). Turtwig's BDSP entry OR-merges its
+ *   starter-gift segment with a genuinely separate Grand Underground wild
+ *   segment — correctly wild (the species really is repeatably catchable
+ *   there), but incorrectly granted Chain Radar before this marker existed.
+ */
+const NON_CHAINABLE_MARKERS = [
+  /Friend Safari/i,
+  /Grand Underground/i,
+];
+
+/** Chainable implies wild — callers that already know a segment's wildness should pass it in rather than have this recompute isWildSegment. */
+function isChainableSegment(segmentText: string, isWild = isWildSegment(segmentText)): boolean {
+  return isWild && !NON_CHAINABLE_MARKERS.some((re) => re.test(segmentText));
 }
 
 /**
@@ -198,27 +236,41 @@ function isWildArea(areaText: string): boolean {
   return segments.some(isWildSegment);
 }
 
+/** Same OR-merge as isWildArea, but for the (stricter) chainable predicate. */
+function isChainableArea(areaText: string): boolean {
+  const segments = areaText
+    .split(/<br\s*\/?>/i)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (segments.length === 0) return isChainableSegment(areaText);
+  return segments.some((s) => isChainableSegment(s));
+}
+
 function resolveFormIdsAndWildness(
   areaText: string,
   varieties: FetchedVariety[],
-): { formIds: number[]; wildByFormId: Map<number, boolean> } {
+): { formIds: number[]; wildByFormId: Map<number, boolean>; chainableByFormId: Map<number, boolean> } {
   if (varieties.length <= 1) {
     const formId = varieties[0]?.formId ?? 0;
     return {
       formIds: [formId],
       wildByFormId: new Map([[formId, isWildArea(areaText)]]),
+      chainableByFormId: new Map([[formId, isChainableArea(areaText)]]),
     };
   }
 
   const segments = areaText.split(/<br\s*\/?>/i);
   const annotatedFormIds: number[] = [];
   const wildByFormId = new Map<number, boolean>();
+  const chainableByFormId = new Map<number, boolean>();
   let sawAnnotation = false;
   let sawUnannotatedContent = false;
   let unannotatedWild = false;
+  let unannotatedChainable = false;
 
   for (const segment of segments) {
     const segmentWild = isWildSegment(segment);
+    const segmentChainable = isChainableSegment(segment, segmentWild);
     // matchAll, not match: a segment can carry more than one bold form
     // annotation without a <br> between them (no real example yet, but
     // nothing in the wikitext convention rules it out) — match() alone
@@ -235,6 +287,10 @@ function resolveFormIdsAndWildness(
             formId,
             (wildByFormId.get(formId) ?? false) || segmentWild,
           );
+          chainableByFormId.set(
+            formId,
+            (chainableByFormId.get(formId) ?? false) || segmentChainable,
+          );
         }
       }
     } else if (segment.trim().length > 0) {
@@ -242,31 +298,35 @@ function resolveFormIdsAndWildness(
       // OR, not AND: wild if any unannotated segment is wild, same merge
       // philosophy as everywhere else here.
       unannotatedWild = unannotatedWild || segmentWild;
+      unannotatedChainable = unannotatedChainable || segmentChainable;
     }
   }
 
   if (!sawAnnotation) {
     const wild = isWildArea(areaText);
+    const chainable = isChainableArea(areaText);
     return {
       formIds: varieties.map((v) => v.formId),
       wildByFormId: new Map(varieties.map((v) => [v.formId, wild])),
+      chainableByFormId: new Map(varieties.map((v) => [v.formId, chainable])),
     };
   }
   if (sawUnannotatedContent) {
     annotatedFormIds.push(0);
     wildByFormId.set(0, (wildByFormId.get(0) ?? false) || unannotatedWild);
+    chainableByFormId.set(0, (chainableByFormId.get(0) ?? false) || unannotatedChainable);
   }
   const formIds = [...new Set(annotatedFormIds)];
-  return { formIds, wildByFormId };
+  return { formIds, wildByFormId, chainableByFormId };
 }
 
 export function parseAvailability(
   wikitext: string,
   varieties: FetchedVariety[],
-): Array<{ game: Game; formId: number; isWild: boolean }> {
+): Array<{ game: Game; formId: number; isWild: boolean; isChainable: boolean }> {
   const mainSection = wikitext.split("{{Availability/Footer}}")[0];
   const calls = findTemplateCalls(mainSection, "Availability/Entry");
-  const results: Array<{ game: Game; formId: number; isWild: boolean }> = [];
+  const results: Array<{ game: Game; formId: number; isWild: boolean; isChainable: boolean }> = [];
 
   for (const call of calls) {
     const { name, params } = parseTemplateCall(call);
@@ -276,7 +336,7 @@ export function parseAvailability(
     const versionLabels = [params.v, params.v2].filter((v): v is string =>
       Boolean(v),
     );
-    const { formIds, wildByFormId } = resolveFormIdsAndWildness(
+    const { formIds, wildByFormId, chainableByFormId } = resolveFormIdsAndWildness(
       params.area ?? "",
       varieties,
     );
@@ -295,6 +355,7 @@ export function parseAvailability(
             game,
             formId,
             isWild: wildByFormId.get(formId) ?? true,
+            isChainable: chainableByFormId.get(formId) ?? true,
           });
         }
       }
@@ -320,6 +381,7 @@ async function scrapeOneSpecies(
     const existing = byKey.get(key);
     if (existing) {
       existing.isWild = existing.isWild || hit.isWild;
+      existing.isChainable = existing.isChainable || hit.isChainable;
       continue;
     }
     byKey.set(key, {
@@ -327,6 +389,7 @@ async function scrapeOneSpecies(
       formId: hit.formId,
       game: hit.game,
       isWild: hit.isWild,
+      isChainable: hit.isChainable,
     });
   }
   return {

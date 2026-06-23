@@ -31,6 +31,13 @@ CREATE TABLE pokemon (
     stat_special_defense      INTEGER NOT NULL,
     stat_speed                INTEGER NOT NULL,
     stat_total                INTEGER NOT NULL,
+    base_experience           INTEGER NOT NULL,
+    ev_yield_hp               INTEGER NOT NULL,
+    ev_yield_attack           INTEGER NOT NULL,
+    ev_yield_defense          INTEGER NOT NULL,
+    ev_yield_special_attack   INTEGER NOT NULL,
+    ev_yield_special_defense  INTEGER NOT NULL,
+    ev_yield_speed            INTEGER NOT NULL,
     PRIMARY KEY (id, form_id)
 );
 

@@ -13,6 +13,8 @@ export const queryKeys = {
   pokemonDetail: (pokemonId: number, formId: number) => ["pokemon-detail", pokemonId, formId] as const,
   methodsForPokemon: (pokemonId: number, formId: number) =>
     ["methods-for-pokemon", pokemonId, formId] as const,
+  cosmeticForms: (pokemonId: number, formId: number) =>
+    ["cosmetic-forms", pokemonId, formId] as const,
   collectionEntry: (pokemonId: number, formId: number) => ["collection-entry", pokemonId, formId] as const,
   activeHunts: ["active-hunts"] as const,
   livingDexStats: (groupBy: DexGroupBy) => ["living-dex-stats", groupBy] as const,

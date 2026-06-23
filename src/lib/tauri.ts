@@ -18,6 +18,7 @@ import type { DexGroupBy } from "./bindings/DexGroupBy";
 import type { DexProgressBucket } from "./bindings/DexProgressBucket";
 import type { SyncStatus } from "./bindings/SyncStatus";
 import type { SyncMode } from "./bindings/SyncMode";
+import type { CosmeticForm } from "./bindings/CosmeticForm";
 
 export type {
   Pokemon,
@@ -32,6 +33,7 @@ export type {
   DexProgressBucket,
   SyncStatus,
   SyncMode,
+  CosmeticForm,
 };
 
 // ── Defaults for browser-preview mode ────────────────────────────────────────
@@ -90,6 +92,13 @@ export const getBestMethod = (
   formId: number,
 ): Promise<ShinyMethod | null> =>
   isTauri() ? invoke("get_best_method", { pokemonId, formId }) : Promise.resolve(null);
+
+/** Mega/Gigantamax sprite variants + (mega only) the required held item, for the sprite gallery. */
+export const getCosmeticForms = (
+  pokemonId: number,
+  formId: number,
+): Promise<CosmeticForm[]> =>
+  isTauri() ? invoke("get_cosmetic_forms", { pokemonId, formId }) : Promise.resolve([]);
 
 // ── Collection ────────────────────────────────────────────────────────────────
 

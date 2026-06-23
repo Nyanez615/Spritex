@@ -6,4 +6,9 @@ export type ShinyMethod = { id: number, pokemon_id: number, form_id: number, gam
 /**
  * JSON-encoded array of boost requirement strings
  */
-boost_requirements: string, is_best_method: boolean, requires_transfer: boolean, transfer_chain: string | null, citation_url: string, notes: string | null, };
+boost_requirements: string, is_best_method: boolean, 
+/**
+ * True unless the underlying availability is gift/static/trade/evolution/hatch-only —
+ * drives the frontend's acquisition-method label for the baseline `wild` method row.
+ */
+is_wild_encounter: boolean, requires_transfer: boolean, transfer_chain: string | null, citation_url: string, notes: string | null, };

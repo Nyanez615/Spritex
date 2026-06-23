@@ -9,7 +9,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readOutJson } from "../src/httpCache.js";
-import type { PokemonRow, ShinyMethodRow } from "../src/deriveShinyMethods.js";
+import type { CosmeticFormRow, PokemonRow, ShinyMethodRow } from "../src/deriveShinyMethods.js";
+
+interface AbilityFact {
+  name: string;
+  isHidden: boolean;
+}
 
 async function methodsFor(
   pokemonId: number,
@@ -175,6 +180,54 @@ test("Bulbasaur (#1) color is green and its level-100 stats match the confirmed 
   assert.equal(bulbasaur!.stat_total, 957);
 });
 
+test("Venusaur (#3) has a Mega cosmetic form with a non-null mega_stone_item (\"venusaurite\") and a Gigantamax cosmetic form with a null one (derived from PokéAPI's item effect_entries text, not a hardcoded table)", async () => {
+  const forms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const venusaurForms = forms.filter((f) => f.pokemon_id === 3 && f.form_id === 0);
+  const mega = venusaurForms.find((f) => f.kind === "mega");
+  const gmax = venusaurForms.find((f) => f.kind === "gmax");
+  assert.ok(mega, "expected a mega cosmetic form for Venusaur");
+  assert.equal(mega!.mega_stone_item, "venusaurite");
+  assert.ok(gmax, "expected a gmax cosmetic form for Venusaur");
+  assert.equal(gmax!.mega_stone_item, null);
+});
+
+test("Charizard (#6) has separate Mega X and Mega Y cosmetic forms with their own distinct stones (charizardite-x / charizardite-y)", async () => {
+  const forms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const charizardForms = forms.filter((f) => f.pokemon_id === 6 && f.form_id === 0);
+  const megaX = charizardForms.find((f) => f.kind === "mega_x");
+  const megaY = charizardForms.find((f) => f.kind === "mega_y");
+  assert.ok(megaX, "expected a mega_x cosmetic form for Charizard");
+  assert.equal(megaX!.mega_stone_item, "charizardite-x");
+  assert.ok(megaY, "expected a mega_y cosmetic form for Charizard");
+  assert.equal(megaY!.mega_stone_item, "charizardite-y");
+});
+
+test("every cosmetic_forms row references a real pokemon row (referential integrity — no orphaned mega/gmax entries)", async () => {
+  const forms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  assert.ok(forms.length > 0, "expected at least one cosmetic form to exist");
+  const pokemonKeys = new Set(pokemon.map((p) => `${p.id}:${p.form_id}`));
+  for (const f of forms) {
+    assert.ok(
+      pokemonKeys.has(`${f.pokemon_id}:${f.form_id}`),
+      `cosmetic form ${f.display_name} references pokemon_id=${f.pokemon_id}/form_id=${f.form_id}, which doesn't exist in pokemon.json`,
+    );
+  }
+});
+
+test("Bulbasaur (#1) has base_experience 64 and an EV yield of +1 Special Attack, all other stats 0 (confirmed against PokéAPI's own base_experience/stats[].effort fields, previously fetched but discarded)", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const bulbasaur = pokemon.find((p) => p.id === 1 && p.form_id === 0);
+  assert.ok(bulbasaur);
+  assert.equal(bulbasaur!.base_experience, 64);
+  assert.equal(bulbasaur!.ev_yield_hp, 0);
+  assert.equal(bulbasaur!.ev_yield_attack, 0);
+  assert.equal(bulbasaur!.ev_yield_defense, 0);
+  assert.equal(bulbasaur!.ev_yield_special_attack, 1);
+  assert.equal(bulbasaur!.ev_yield_special_defense, 0);
+  assert.equal(bulbasaur!.ev_yield_speed, 0);
+});
+
 test("Pichu (#172, a baby Pokémon) is marked is_baby; Pikachu (its evolution) is not", async () => {
   const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
   const pichu = pokemon.find((p) => p.id === 172 && p.form_id === 0);
@@ -197,6 +250,19 @@ test("Pyroar (#668, a confirmed gender-difference species) has a non-null female
     pyroar!.shiny_sprite_url_female,
     "expected Pyroar to have a shiny female sprite URL",
   );
+});
+
+test("Bulbasaur (#1) has Overgrow as a normal ability and Chlorophyll flagged isHidden (confirmed against PokéAPI's own is_hidden field, previously discarded)", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const bulbasaur = pokemon.find((p) => p.id === 1 && p.form_id === 0);
+  assert.ok(bulbasaur);
+  const abilities: AbilityFact[] = JSON.parse(bulbasaur!.abilities);
+  const overgrow = abilities.find((a) => a.name === "overgrow");
+  const chlorophyll = abilities.find((a) => a.name === "chlorophyll");
+  assert.ok(overgrow, "expected an overgrow ability entry");
+  assert.ok(chlorophyll, "expected a chlorophyll ability entry");
+  assert.equal(overgrow!.isHidden, false);
+  assert.equal(chlorophyll!.isHidden, true);
 });
 
 test("Bulbasaur (#1, no gender difference) has null female sprite fields", async () => {
@@ -307,11 +373,16 @@ test("Dream World contributes zero shiny_methods rows (confirmed fully shiny-loc
   assert.ok(all.every((r) => r.game !== "dream_world"));
 });
 
-test("Bulbasaur (#1) and Charmander (#4), one-time X/Y gifts from Professor Sycamore, have a wild row in gen6_xy but no Chain Fishing or Pokéradar row there (those require a repeatable wild encounter, which a one-time gift isn't)", async () => {
+test("Bulbasaur (#1) and Charmander (#4), one-time X/Y gifts from Professor Sycamore, have a wild row in gen6_xy but no Chain Fishing or Pokéradar row there (those require a repeatable wild encounter, which a one-time gift isn't); that wild row is also flagged is_wild_encounter=false so the frontend doesn't mislabel a gift as a Wild Encounter", async () => {
   for (const id of [1, 4]) {
     const rows = await methodsFor(id);
     const wild = rows.find((r) => r.game === "gen6_xy" && r.method === "wild");
     assert.ok(wild, `expected a gen6_xy/wild row for pokemon ${id}`);
+    assert.equal(
+      wild!.is_wild_encounter,
+      false,
+      `expected pokemon ${id}'s gen6_xy gift row to be flagged non-wild for labeling purposes`,
+    );
     assert.ok(
       rows.every(
         (r) =>
@@ -369,5 +440,41 @@ test('Chespin (#650), a starter gift in X/Y with a second <br>-separated "Traded
         ),
     ),
     "expected no gen6_xy chain_fishing/chain_radar row for Chespin",
+  );
+});
+
+test("Ivysaur (#2)'s only X/Y availability is text-mentioned Friend Safari (\"Friend Safari (Grass type Safari)\"), not a Route/fishing encounter — has a wild row in gen6_xy (still genuinely wild, just not chainable) but no Chain Fishing or Pokéradar row there. Regression test for a real reported bug: Friend-Safari-as-text was defaulting to chainable before NON_CHAINABLE_MARKERS existed", async () => {
+  const rows = await methodsFor(2);
+  const wild = rows.find((r) => r.game === "gen6_xy" && r.method === "wild");
+  assert.ok(wild, "expected a gen6_xy/wild row for Ivysaur");
+  assert.equal(
+    wild!.is_wild_encounter,
+    true,
+    "Friend Safari is a genuine roaming wild encounter, just not chainable — should stay labeled Wild Encounter",
+  );
+  assert.ok(
+    rows.every(
+      (r) =>
+        !(
+          r.game === "gen6_xy" &&
+          (r.method === "chain_fishing" || r.method === "chain_radar")
+        ),
+    ),
+    "expected no gen6_xy chain_fishing/chain_radar row for Ivysaur",
+  );
+});
+
+test("Turtwig (#387) in BDSP: a wild row exists (its Grand Underground Hideaway availability is genuinely repeatable wild, OR-merged with its starter-gift segment) but no Pokéradar row, since Pokéradar requires tall-grass encounters and the Grand Underground is a distinct \"symbol encounter\" mechanic per Bulbapedia. Regression test for a real reported bug: Grand-Underground-only availability was incorrectly granting Chain Radar before NON_CHAINABLE_MARKERS existed", async () => {
+  const rows = await methodsFor(387);
+  const wild = rows.find((r) => r.game === "bdsp" && r.method === "wild");
+  assert.ok(wild, "expected a bdsp/wild row for Turtwig");
+  assert.equal(
+    wild!.is_wild_encounter,
+    true,
+    "the Grand Underground segment is genuinely wild, OR-merged with the gift segment",
+  );
+  assert.ok(
+    rows.every((r) => !(r.game === "bdsp" && r.method === "chain_radar")),
+    "expected no bdsp/chain_radar row for Turtwig (Pokéradar doesn't work in the Grand Underground)",
   );
 });

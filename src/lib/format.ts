@@ -1,5 +1,5 @@
-/** Parses the JSON-encoded string arrays models.rs stores for types/boost_requirements. */
-export const parseJsonArray = (value: string): string[] => {
+/** Parses the JSON-encoded arrays models.rs stores for types/egg_groups/boost_requirements/abilities. Defaults to string[] (most columns); pass a type param for richer shapes (e.g. abilities). */
+export const parseJsonArray = <T = string>(value: string): T[] => {
   try {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed : [];
@@ -7,6 +7,12 @@ export const parseJsonArray = (value: string): string[] => {
     return [];
   }
 };
+
+/** Shape stored in the pokemon table's `abilities` JSON column — see fetchPokeapi.ts. */
+export interface PokemonAbility {
+  name: string;
+  isHidden: boolean;
+}
 
 /** odds_* fields are denominators — 4096 means "1 in 4096", never a raw probability. */
 export const formatOdds = (denominator: number): string => `1/${denominator.toLocaleString()}`;

@@ -22,6 +22,7 @@ fn row_to_shiny_method(row: &Row) -> rusqlite::Result<ShinyMethod> {
         odds_optimized: row.get("odds_optimized")?,
         boost_requirements: row.get("boost_requirements")?,
         is_best_method: row.get::<_, i32>("is_best_method")? != 0,
+        is_wild_encounter: row.get::<_, i32>("is_wild_encounter")? != 0,
         requires_transfer: row.get::<_, i32>("requires_transfer")? != 0,
         transfer_chain: row.get("transfer_chain")?,
         citation_url: row.get("citation_url")?,
@@ -109,7 +110,7 @@ mod tests {
     use crate::test_support::{seed_shiny_methods, seed_static_db, TestPokemonRow, TestShinyMethodRow};
 
     fn method_row(pokemon_id: i32, game: &str, method: &str, odds: i32, best: bool) -> TestShinyMethodRow {
-        TestShinyMethodRow { pokemon_id, form_id: 0, game: game.into(), method: method.into(), odds_optimized: odds, is_best_method: best }
+        TestShinyMethodRow { pokemon_id, form_id: 0, game: game.into(), method: method.into(), odds_optimized: odds, is_best_method: best, ..Default::default() }
     }
 
     #[test]
@@ -159,5 +160,20 @@ mod tests {
         let best = get_best_method_impl(&conn, 1, 0).unwrap().unwrap();
         assert_eq!(best.game, Game::Bdsp);
         assert_eq!(best.odds_optimized, 94);
+    }
+
+    #[test]
+    fn get_methods_for_pokemon_round_trips_is_wild_encounter() {
+        let conn = seed_static_db(&[TestPokemonRow { id: 1, ..Default::default() }]);
+        seed_shiny_methods(&conn, &[
+            TestShinyMethodRow { pokemon_id: 1, game: "gen4_pt".into(), method: "wild".into(), is_wild_encounter: false, ..Default::default() },
+            TestShinyMethodRow { pokemon_id: 1, game: "sv".into(), method: "wild".into(), is_wild_encounter: true, ..Default::default() },
+        ]);
+
+        let results = get_methods_for_pokemon_impl(&conn, 1, 0).unwrap();
+        let gift_row = results.iter().find(|m| m.game == Game::Gen4Pt).unwrap();
+        let wild_row = results.iter().find(|m| m.game == Game::Sv).unwrap();
+        assert!(!gift_row.is_wild_encounter, "gift-only row should round-trip as false");
+        assert!(wild_row.is_wild_encounter, "genuinely wild row should round-trip as true");
     }
 }

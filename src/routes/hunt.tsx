@@ -15,7 +15,7 @@ import { RequireSync } from "@/components/SyncRequiredNotice";
 import { usePokemonLookup } from "@/hooks/usePokemonLookup";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { formatOdds } from "@/lib/format";
-import { GAME_LABELS, METHOD_LABELS } from "@/lib/labels";
+import { GAME_LABELS, methodLabel } from "@/lib/labels";
 import { invalidateCollectionAggregates, queryKeys } from "@/lib/queryKeys";
 import {
   getActiveHunts,
@@ -141,7 +141,7 @@ function HuntDashboard() {
                         {best && (
                           <p className="text-xs text-muted-foreground">
                             Best: {GAME_LABELS[best.game]} ·{" "}
-                            {METHOD_LABELS[best.method]} ·{" "}
+                            {methodLabel(best)} ·{" "}
                             {formatOdds(
                               entry.has_shiny_charm
                                 ? best.odds_charm

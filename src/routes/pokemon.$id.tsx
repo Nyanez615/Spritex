@@ -45,13 +45,14 @@ import {
   formatGenderRate,
   formatOdds,
   parseJsonArray,
+  type PokemonAbility,
 } from "@/lib/format";
 import {
   GAME_LABELS,
-  METHOD_LABELS,
   POKEMON_COLOR_HEX,
   TYPE_COLORS,
   humanize,
+  methodLabel,
 } from "@/lib/labels";
 import { invalidateCollectionAggregates, queryKeys } from "@/lib/queryKeys";
 import {
@@ -68,6 +69,7 @@ import {
 } from "@/lib/statCalc";
 import {
   getCollectionEntry,
+  getCosmeticForms,
   getMethodsForPokemon,
   getPokemonDetail,
   incrementCounter,
@@ -78,6 +80,7 @@ import {
   type ChecklistField,
   type CollectionEntry,
   type CollectionStatus,
+  type CosmeticForm,
   type Pokemon,
   type ShinyMethod,
 } from "@/lib/tauri";
@@ -131,6 +134,11 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
   const { data: methods } = useQuery({
     queryKey: queryKeys.methodsForPokemon(pokemonId, formId),
     queryFn: () => getMethodsForPokemon(pokemonId, formId),
+  });
+
+  const { data: cosmeticForms } = useQuery({
+    queryKey: queryKeys.cosmeticForms(pokemonId, formId),
+    queryFn: () => getCosmeticForms(pokemonId, formId),
   });
 
   const { isConfigured: isSyncConfigured, isLoading: syncLoading } =
@@ -205,6 +213,10 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
     ...(pokemon.shiny_sprite_url_female
       ? [{ src: pokemon.shiny_sprite_url_female, label: "Shiny Female" }]
       : []),
+    ...(cosmeticForms ?? []).flatMap((f) => [
+      { src: f.sprite_url, label: f.display_name },
+      { src: f.shiny_sprite_url, label: `Shiny ${f.display_name}` },
+    ]),
   ];
 
   return (
@@ -258,7 +270,7 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
 
         <Separator />
 
-        <ProfileSection pokemon={pokemon} types={types} />
+        <ProfileSection pokemon={pokemon} types={types} cosmeticForms={cosmeticForms ?? []} />
 
         <Separator />
 
@@ -461,16 +473,34 @@ function ProfileField({
   );
 }
 
+/** Compact "+1 HP, +2 Speed"-style summary — only the nonzero EV yield stats. */
+function formatEvYield(pokemon: Pokemon): string {
+  const yields: Array<[StatKey, number]> = [
+    ["hp", pokemon.ev_yield_hp],
+    ["attack", pokemon.ev_yield_attack],
+    ["defense", pokemon.ev_yield_defense],
+    ["special_attack", pokemon.ev_yield_special_attack],
+    ["special_defense", pokemon.ev_yield_special_defense],
+    ["speed", pokemon.ev_yield_speed],
+  ];
+  const nonzero = yields.filter(([, value]) => value > 0);
+  if (nonzero.length === 0) return "—";
+  return nonzero.map(([key, value]) => `+${value} ${STAT_LABELS[key]}`).join(", ");
+}
+
 function ProfileSection({
   pokemon,
   types,
+  cosmeticForms,
 }: {
   pokemon: Pokemon;
   types: string[];
+  cosmeticForms: CosmeticForm[];
 }) {
   const eggGroups = parseJsonArray(pokemon.egg_groups);
-  const abilities = parseJsonArray(pokemon.abilities);
+  const abilities = parseJsonArray<PokemonAbility>(pokemon.abilities);
   const colorHex = POKEMON_COLOR_HEX[pokemon.color];
+  const megaStones = [...new Set(cosmeticForms.map((f) => f.mega_stone_item).filter((s): s is string => s !== null))];
 
   return (
     <div>
@@ -516,8 +546,27 @@ function ProfileSection({
         <ProfileField label="Base Happiness">
           {pokemon.base_happiness}
         </ProfileField>
+        <ProfileField label="EXP Yield">{pokemon.base_experience}</ProfileField>
+        <ProfileField label="EV Yield">{formatEvYield(pokemon)}</ProfileField>
+        {megaStones.length > 0 && (
+          <ProfileField label="Mega Stone">
+            {megaStones.map(humanize).join(", ")}
+          </ProfileField>
+        )}
         <ProfileField label="Abilities">
-          {abilities.length > 0 ? abilities.map(humanize).join(", ") : "—"}
+          {abilities.length > 0 ? (
+            abilities.map((a, i) => (
+              <span key={a.name}>
+                {i > 0 && ", "}
+                {humanize(a.name)}
+                {a.isHidden && (
+                  <span className="text-muted-foreground"> (Hidden)</span>
+                )}
+              </span>
+            ))
+          ) : (
+            "—"
+          )}
         </ProfileField>
       </div>
     </div>
@@ -558,7 +607,7 @@ export function StatsSection({ pokemon }: { pokemon: Pokemon }) {
 
   const computed = useMemo(() => computeAllStats(pokemon, sim), [pokemon, sim]);
   const availableAbilities = useMemo(() => {
-    const abilities = parseJsonArray(pokemon.abilities);
+    const abilities = parseJsonArray<PokemonAbility>(pokemon.abilities).map((a) => a.name);
     return (
       Object.keys(STAT_ABILITY_NAMES) as Array<
         Exclude<StatModifierAbility, "none">
@@ -808,7 +857,7 @@ function MethodRow({ method }: { method: ShinyMethod }) {
             </span>
             <span className="text-muted-foreground">·</span>
             <span className="text-sm text-muted-foreground">
-              {METHOD_LABELS[method.method]}
+              {methodLabel(method)}
             </span>
             {method.is_best_method && <Badge>Best</Badge>}
             {method.requires_transfer && (
@@ -967,7 +1016,7 @@ export function CollectionPanel({
                     <SelectContent>
                       {methods.map((m) => (
                         <SelectItem key={m.id} value={String(m.id)}>
-                          {GAME_LABELS[m.game]} — {METHOD_LABELS[m.method]}
+                          {GAME_LABELS[m.game]} — {methodLabel(m)}
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -11,29 +11,43 @@
  * skipped and why):
  * - "wild" always applies — it's the no-special-boost baseline, and the
  *   shiny RNG check fires the same way regardless of *how* the Pokémon was
- *   obtained (wild encounter, gift, static, Pal Park...).
+ *   obtained (wild encounter, gift, static, Pal Park...). Every row for a
+ *   (form, game) pair — including this baseline one — carries an
+ *   `is_wild_encounter` flag (from scrapeBulbapedia.ts's `isWild`) so the
+ *   frontend can label a gift/static-only acquisition correctly instead of
+ *   always saying "Wild Encounter." Confirmed this was a real, previously-
+ *   unguarded bug: Turtwig's gift-only games showed the literal "Wild
+ *   Encounter" label even though it was never obtainable in the wild there —
+ *   `isWild` was already computed during scraping but discarded before this
+ *   fix, never reaching `shiny_methods`.
  * - "masuda" applies only if the game has breeding (NO_BREEDING_GAMES) and
  *   the species itself can lay eggs (isBreedable, from PokéAPI's egg
  *   groups — "no-eggs" excluded).
  * - chain_radar/chain_fishing/dex_nav/sos/catch_combo/outbreak/
  *   brilliant_pokemon (WILD_ONLY_METHODS, below) are game-level mechanics
- *   that require a *repeatable wild encounter* to chain/grind against — they
- *   qualify only for (form, game) pairs scrapeBulbapedia.ts's own area= text
- *   marks as a genuine wild encounter (wildAvailableByForm). Gift/static/
- *   trade/evolution/hatch-only availability does NOT count, even though the
- *   baseline "wild" method above still applies to it (the shiny roll fires
- *   identically regardless of how the Pokémon was obtained). Confirmed this
- *   was a real, previously-unguarded bug: Bulbasaur's X/Y "Received from
- *   Professor Sycamore" gift was incorrectly shown as Chain-Fishing-huntable
- *   before wildAvailableByForm existed.
+ *   that require a *repeatable, chainable wild encounter* to chain/grind
+ *   against — they qualify only for (form, game) pairs scrapeBulbapedia.ts's
+ *   own area= text marks as chainable (chainableByForm, stricter than plain
+ *   wildness — see NON_CHAINABLE_MARKERS in scrapeBulbapedia.ts). Gift/
+ *   static/trade/evolution/hatch-only availability does NOT count, even
+ *   though the baseline "wild" method above still applies to it (the shiny
+ *   roll fires identically regardless of how the Pokémon was obtained).
+ *   Confirmed two real, previously-unguarded bugs this way: Bulbasaur's X/Y
+ *   "Received from Professor Sycamore" gift was incorrectly shown as
+ *   Chain-Fishing-huntable before any gating existed; Ivysaur's X/Y entry
+ *   (text-mentioned Friend Safari, not a Route encounter) and Turtwig's BDSP
+ *   Grand Underground entry (a distinct "symbol encounter" mechanic per
+ *   Bulbapedia, not the tall-grass encounters Pokéradar requires) were both
+ *   incorrectly granting Chain Fishing/Chain Radar before NON_CHAINABLE_MARKERS
+ *   existed — genuinely wild, but not chainable.
  * - "dynamax_adventure" (SwSh) and "friend_safari" (Gen6 X/Y) are gated by
  *   their own scraped rosters (scrapeDynamaxAdventure.ts/
  *   scrapeFriendSafari.ts) — both are restricted-roster mechanics, unlike
- *   the game-level ones above. Roster membership itself is also NOT wild for
- *   WILD_ONLY_METHODS purposes (a Dynamax Adventure den or Friend Safari
- *   zone isn't a normal wild Route encounter you can Pokéradar-chain or
- *   fish in) — see the availableByForm-population loops below, which
- *   deliberately never add to wildAvailableByForm.
+ *   the game-level ones above. Roster membership itself is also NOT
+ *   chainable for WILD_ONLY_METHODS purposes (a Dynamax Adventure den or
+ *   Friend Safari zone isn't a normal wild Route encounter you can
+ *   Pokéradar-chain or fish in) — see the availableByForm-population loops
+ *   below, which deliberately never add to chainableByForm or wildLabelByForm.
  * - Ranger/Ranger: Shadows of Almia/Ranger: Guardian Signs (Manaphy's egg)
  *   and Dream Radar (its full catchable roster) get availability only via
  *   rosterFacts.ts's small hardcoded species lists (resolveRosterKeys,
@@ -44,7 +58,7 @@
  *   (see scrapeBulbapedia.ts's header).
  */
 import { readOutJson, writeOutJson } from "./httpCache.js";
-import type { FetchedSpecies } from "./fetchPokeapi.js";
+import type { FetchedCosmeticForm, FetchedSpecies } from "./fetchPokeapi.js";
 import type { AvailabilityOutput } from "./scrapeBulbapedia.js";
 import type { ShinyLockFact } from "./scrapeShinyLocks.js";
 import type { DynamaxAdventureFact } from "./scrapeDynamaxAdventure.js";
@@ -86,6 +100,23 @@ export interface PokemonRow {
   stat_special_defense: number;
   stat_speed: number;
   stat_total: number;
+  base_experience: number;
+  ev_yield_hp: number;
+  ev_yield_attack: number;
+  ev_yield_defense: number;
+  ev_yield_special_attack: number;
+  ev_yield_special_defense: number;
+  ev_yield_speed: number;
+}
+
+export interface CosmeticFormRow {
+  pokemon_id: number;
+  form_id: number;
+  kind: string;
+  display_name: string;
+  sprite_url: string;
+  shiny_sprite_url: string;
+  mega_stone_item: string | null;
 }
 
 export interface ShinyMethodRow {
@@ -98,6 +129,8 @@ export interface ShinyMethodRow {
   odds_optimized: number;
   boost_requirements: string;
   is_best_method: boolean;
+  /** True unless the underlying availability was gift/static/trade/evolution/hatch-only — see scrapeBulbapedia.ts's isWild. */
+  is_wild_encounter: boolean;
   requires_transfer: boolean;
   transfer_chain: string | null;
   citation_url: string;
@@ -159,9 +192,12 @@ function resolveRosterKeys(byName: Map<string, FetchedSpecies>, names: string[])
 }
 
 /**
- * Mechanics that require a *repeatable wild grass/water/cave encounter* to
- * chain/grind against — gated on isWildAvailable, not just plain
- * availability. See this file's header comment for the full rationale.
+ * Mechanics that require a *repeatable, chainable wild encounter* to
+ * chain/grind against — gated on isChainable (scrapeBulbapedia.ts's
+ * NON_CHAINABLE_MARKERS-derived flag), not just plain availability or even
+ * plain wildness (Friend-Safari-as-text and Grand Underground are genuinely
+ * wild but not chainable — see scrapeBulbapedia.ts's header). See this
+ * file's header comment for the full rationale.
  */
 const WILD_ONLY_METHODS: ReadonlySet<Method> = new Set([
   "chain_radar", "chain_fishing", "dex_nav", "sos", "catch_combo", "outbreak", "brilliant_pokemon",
@@ -172,7 +208,7 @@ function applicableMethods(
   isBreedable: boolean,
   isInDaRoster: boolean,
   isInFriendSafariRoster: boolean,
-  isWildAvailable: boolean,
+  isChainable: boolean,
   oddsByGame: Map<Game, OddsRow[]>
 ): OddsRow[] {
   const rows = oddsByGame.get(game) ?? [];
@@ -181,12 +217,12 @@ function applicableMethods(
     if (row.method === "masuda") return !NO_BREEDING_GAMES.has(game) && isBreedable;
     if (row.method === "dynamax_adventure") return isInDaRoster;
     if (row.method === "friend_safari") return isInFriendSafariRoster;
-    if (WILD_ONLY_METHODS.has(row.method)) return isWildAvailable;
+    if (WILD_ONLY_METHODS.has(row.method)) return isChainable;
     return true; // baseline "wild" method, and anything else genuinely ungated
   });
 }
 
-export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; shinyMethods: ShinyMethodRow[] }> {
+export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; shinyMethods: ShinyMethodRow[]; cosmeticForms: CosmeticFormRow[] }> {
   const species = await readOutJson<FetchedSpecies[]>("species.json");
   const { citations, availability } = await readOutJson<AvailabilityOutput>("availability.json");
   const locks = await readOutJson<ShinyLockFact[]>("shiny-locks.json");
@@ -201,16 +237,28 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
 
   const availableByForm = new Map<string, Set<Game>>();
   // Subset of availableByForm: only (form, game) pairs Bulbapedia's own
-  // area= text marks as a genuine wild encounter — see WILD_ONLY_METHODS.
-  const wildAvailableByForm = new Map<string, Set<Game>>();
+  // area= text marks as a genuine *chainable* wild encounter — feeds
+  // WILD_ONLY_METHODS. Stricter than "wild" — Friend-Safari-as-text and
+  // Grand Underground are wild but not chainable, see scrapeBulbapedia.ts.
+  const chainableByForm = new Map<string, Set<Game>>();
+  // Separate subset of availableByForm: (form, game) pairs that ARE a
+  // roaming wild-style encounter at all (gift/static/trade/evolution/hatch
+  // excluded) — independent of chainability. Feeds the persisted
+  // is_wild_encounter column, which drives the frontend's acquisition-method
+  // label (e.g. "Gift / Static Encounter" instead of "Wild Encounter").
+  const wildLabelByForm = new Map<string, Set<Game>>();
   for (const fact of availability) {
     if (fact.game === "go") continue; // GO deferred entirely — see scrapeBulbapedia.ts header
     const key = `${fact.pokemonId}:${fact.formId}`;
     if (!availableByForm.has(key)) availableByForm.set(key, new Set());
     availableByForm.get(key)!.add(fact.game);
     if (fact.isWild) {
-      if (!wildAvailableByForm.has(key)) wildAvailableByForm.set(key, new Set());
-      wildAvailableByForm.get(key)!.add(fact.game);
+      if (!wildLabelByForm.has(key)) wildLabelByForm.set(key, new Set());
+      wildLabelByForm.get(key)!.add(fact.game);
+    }
+    if (fact.isChainable) {
+      if (!chainableByForm.has(key)) chainableByForm.set(key, new Set());
+      chainableByForm.get(key)!.add(fact.game);
     }
   }
   // DA-roster/Friend-Safari-roster membership is itself a form of in-game
@@ -219,9 +267,13 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
   // Game-locations table, only catchable via the Crown Tundra den, so
   // "swsh"/"gen6_xy" must be added here rather than relying on them already
   // being present from the loop above. Deliberately never added to
-  // wildAvailableByForm — a den/Safari-zone catch isn't a normal wild Route
+  // chainableByForm — a den/Safari-zone catch isn't a normal wild Route
   // encounter you can Pokéradar-chain or fish in (absence there already
-  // means non-wild for WILD_ONLY_METHODS, no explicit marker needed).
+  // means non-chainable for WILD_ONLY_METHODS, no explicit marker needed).
+  // Also deliberately never added to wildLabelByForm — a den/Safari catch
+  // isn't a "Wild Encounter" in the labeling sense either; it gets its own
+  // dedicated method label (dynamax_adventure/friend_safari), not the
+  // baseline wild row, so is_wild_encounter is moot for these rows anyway.
   for (const fact of daRosterFacts) {
     const key = `${fact.pokemonId}:${fact.formId}`;
     if (!availableByForm.has(key)) availableByForm.set(key, new Set());
@@ -291,6 +343,13 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
         stat_special_defense: variety.statSpecialDefense,
         stat_speed: variety.statSpeed,
         stat_total: variety.statTotal,
+        base_experience: variety.baseExperience,
+        ev_yield_hp: variety.evYieldHp,
+        ev_yield_attack: variety.evYieldAttack,
+        ev_yield_defense: variety.evYieldDefense,
+        ev_yield_special_attack: variety.evYieldSpecialAttack,
+        ev_yield_special_defense: variety.evYieldSpecialDefense,
+        ev_yield_speed: variety.evYieldSpeed,
       });
 
       const key = `${s.pokemonId}:${variety.formId}`;
@@ -307,14 +366,23 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
       // without this check a future regional form sharing that pokemonId
       // would silently inherit eligibility it was never recorded against.
       const isInFriendSafariRoster = variety.formId === 0 && friendSafariRoster.has(s.pokemonId);
-      const wildAvailableGames = wildAvailableByForm.get(key) ?? new Set<Game>();
+      const chainableGames = chainableByForm.get(key) ?? new Set<Game>();
+      const wildLabelGames = wildLabelByForm.get(key) ?? new Set<Game>();
 
-      const candidateRows: Array<{ game: Game; method: Method; odds: OddsRow }> = [];
+      const candidateRows: Array<{ game: Game; method: Method; odds: OddsRow; isWildEncounter: boolean }> = [];
       for (const game of available) {
         if (locked.has(game)) continue;
-        const isWildAvailable = wildAvailableGames.has(game);
-        for (const odds of applicableMethods(game, s.isBreedable, isInDaRoster, isInFriendSafariRoster, isWildAvailable, oddsByGame)) {
-          candidateRows.push({ game, method: odds.method, odds });
+        const isChainable = chainableGames.has(game);
+        // is_wild_encounter only has meaning for the baseline "wild" method
+        // row — it's the acquisition-path label (gift/static vs. genuinely
+        // wild), orthogonal to breeding/roster methods like masuda/
+        // dynamax_adventure/friend_safari, which already carry their own
+        // distinct method label. Stamping the gift/wild signal onto those
+        // rows too would let a future "WHERE is_wild_encounter" consumer
+        // silently misread a masuda row's acquisition path.
+        const isWildEncounter = wildLabelGames.has(game);
+        for (const odds of applicableMethods(game, s.isBreedable, isInDaRoster, isInFriendSafariRoster, isChainable, oddsByGame)) {
+          candidateRows.push({ game, method: odds.method, odds, isWildEncounter: odds.method === "wild" ? isWildEncounter : true });
         }
       }
       if (candidateRows.length === 0) continue;
@@ -335,6 +403,7 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
           odds_optimized: c.odds.oddsOptimized,
           boost_requirements: JSON.stringify(c.odds.boostRequirements),
           is_best_method: i === bestIndex,
+          is_wild_encounter: c.isWildEncounter,
           requires_transfer: false,
           transfer_chain: null,
           citation_url: citationUrl,
@@ -344,10 +413,25 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
     }
   }
 
-  console.log(`deriveShinyMethods: ${pokemon.length} pokemon rows, ${shinyMethods.length} shiny_methods rows`);
+  // Cosmetic forms (Mega/Gigantamax) need no availability/odds derivation —
+  // they aren't independently huntable (Mega reverts after battle, Gmax
+  // doesn't change shininess) — just a column-shape pass-through.
+  const cosmeticFormsRaw = await readOutJson<FetchedCosmeticForm[]>("cosmetic-forms-raw.json");
+  const cosmeticForms: CosmeticFormRow[] = cosmeticFormsRaw.map((f) => ({
+    pokemon_id: f.pokemonId,
+    form_id: f.baseFormId,
+    kind: f.kind,
+    display_name: f.displayName,
+    sprite_url: f.spriteUrl,
+    shiny_sprite_url: f.shinySpriteUrl,
+    mega_stone_item: f.megaStoneItem,
+  }));
+
+  console.log(`deriveShinyMethods: ${pokemon.length} pokemon rows, ${shinyMethods.length} shiny_methods rows, ${cosmeticForms.length} cosmetic_forms rows`);
   await writeOutJson("pokemon.json", pokemon);
   await writeOutJson("shiny-methods.json", shinyMethods);
-  return { pokemon, shinyMethods };
+  await writeOutJson("cosmetic-forms.json", cosmeticForms);
+  return { pokemon, shinyMethods, cosmeticForms };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

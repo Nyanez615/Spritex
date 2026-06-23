@@ -5,6 +5,7 @@
  */
 import type { Game } from "./bindings/Game";
 import type { Method } from "./bindings/Method";
+import type { ShinyMethod } from "./bindings/ShinyMethod";
 
 export const GAME_ORDER: Game[] = [
   "gen1_vc",
@@ -89,6 +90,22 @@ export const METHOD_LABELS: Record<Method, string> = {
   friend_safari: "Friend Safari",
   brilliant_pokemon: "Brilliant Pokémon",
 };
+
+/**
+ * Display label for a shiny_methods row's method, distinguishing the baseline
+ * "wild" method's actual acquisition path — `is_wild_encounter` is false for
+ * gift/static/trade/evolution/hatch-only availability (the shiny roll still
+ * fires the same way, but calling it "Wild Encounter" is misleading when the
+ * species was never actually obtainable in the wild there). Every other
+ * method already implies its own specific acquisition path, so only the
+ * baseline method needs this distinction.
+ */
+export function methodLabel(method: Pick<ShinyMethod, "method" | "is_wild_encounter">): string {
+  if (method.method === "wild" && !method.is_wild_encounter) {
+    return "Gift / Static Encounter";
+  }
+  return METHOD_LABELS[method.method];
+}
 
 /** Game-conventional type order (not alphabetical) — matches how every official type chart/dex presents them. */
 export const TYPE_ORDER = [

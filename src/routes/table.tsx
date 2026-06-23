@@ -23,7 +23,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { usePokemonLookup } from "@/hooks/usePokemonLookup";
 import { formatOdds } from "@/lib/format";
-import { GAME_LABELS, GAME_ORDER, METHOD_LABELS } from "@/lib/labels";
+import { GAME_LABELS, GAME_ORDER, methodLabel } from "@/lib/labels";
 import { getMethodsForGame, type Game, type ShinyMethod } from "@/lib/tauri";
 
 export const Route = createFileRoute("/table")({
@@ -81,7 +81,7 @@ function MethodsTable() {
       {
         accessorKey: "method",
         header: "Method",
-        cell: ({ getValue }) => METHOD_LABELS[getValue<ShinyMethod["method"]>()],
+        cell: ({ row }) => methodLabel(row.original),
       },
       {
         accessorKey: "odds_optimized",

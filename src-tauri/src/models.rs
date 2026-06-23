@@ -293,6 +293,13 @@ pub struct Pokemon {
     pub stat_special_defense: i32,
     pub stat_speed: i32,
     pub stat_total: i32,
+    pub base_experience: i32,
+    pub ev_yield_hp: i32,
+    pub ev_yield_attack: i32,
+    pub ev_yield_defense: i32,
+    pub ev_yield_special_attack: i32,
+    pub ev_yield_special_defense: i32,
+    pub ev_yield_speed: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -309,10 +316,33 @@ pub struct ShinyMethod {
     /// JSON-encoded array of boost requirement strings
     pub boost_requirements: String,
     pub is_best_method: bool,
+    /// True unless the underlying availability is gift/static/trade/evolution/hatch-only —
+    /// drives the frontend's acquisition-method label for the baseline `wild` method row.
+    pub is_wild_encounter: bool,
     pub requires_transfer: bool,
     pub transfer_chain: Option<String>,
     pub citation_url: String,
     pub notes: Option<String>,
+}
+
+/// Mega Evolution / Gigantamax — cosmetic battle forms, not distinct dex
+/// entries (Mega reverts after battle; Gmax doesn't change shininess), so
+/// these never get their own `shiny_methods` rows. `kind` is stringly-typed
+/// (not an enum) since it's purely display, with a tiny fixed set ("mega",
+/// "mega_x", "mega_y", "gmax") that nothing filters/queries on the way
+/// Game/Method do.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CosmeticForm {
+    pub id: i32,
+    pub pokemon_id: i32,
+    pub form_id: i32,
+    pub kind: String,
+    pub display_name: String,
+    pub sprite_url: String,
+    pub shiny_sprite_url: String,
+    /// PokéAPI item slug, e.g. "venusaurite" — None for Gigantamax (no held item).
+    pub mega_stone_item: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

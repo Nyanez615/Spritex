@@ -25,7 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { FilterBar, type FilterGroup } from "@/components/FilterBar";
 import { useCollectionLookup } from "@/hooks/useCollectionLookup";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
-import { parseJsonArray } from "@/lib/format";
+import { parseJsonArray, type PokemonAbility } from "@/lib/format";
 import { COLOR_ORDER, TYPE_COLORS, TYPE_ORDER, humanize } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 import { getPokemonList, type CollectionEntry, type Pokemon } from "@/lib/tauri";
@@ -221,7 +221,10 @@ function PokedexGrid() {
     [pokemon],
   );
   const abilityOptions = useMemo(
-    () => Array.from(new Set((pokemon ?? []).flatMap((p) => parseJsonArray(p.abilities)))).sort(),
+    () =>
+      Array.from(
+        new Set((pokemon ?? []).flatMap((p) => parseJsonArray<PokemonAbility>(p.abilities).map((a) => a.name))),
+      ).sort(),
     [pokemon],
   );
 
@@ -243,7 +246,7 @@ function PokedexGrid() {
         if (selectedEggGroups.size && !parseJsonArray(p.egg_groups).some((g) => selectedEggGroups.has(g))) return false;
         if (selectedShapes.size && (!p.shape || !selectedShapes.has(p.shape))) return false;
         if (selectedGrowthRates.size && !selectedGrowthRates.has(p.growth_rate)) return false;
-        if (selectedAbilities.size && !parseJsonArray(p.abilities).some((a) => selectedAbilities.has(a))) return false;
+        if (selectedAbilities.size && !parseJsonArray<PokemonAbility>(p.abilities).some((a) => selectedAbilities.has(a.name))) return false;
         if (final && !p.is_final_evolution) return false;
         return true;
       }),
