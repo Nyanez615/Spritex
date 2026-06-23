@@ -135,6 +135,9 @@ export const resetHunt = (pokemonId: number, formId: number): Promise<Collection
 export const getLivingDexStats = (groupBy: DexGroupBy): Promise<DexProgressBucket[]> =>
   isTauri() ? invoke("get_living_dex_stats", { groupBy }) : Promise.resolve([]);
 
+export const getAllCollectionEntries = (): Promise<CollectionEntry[]> =>
+  isTauri() ? invoke("get_all_collection_entries") : Promise.resolve([]);
+
 // ── Hunt ──────────────────────────────────────────────────────────────────────
 
 export const incrementCounter = (

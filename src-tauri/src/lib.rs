@@ -46,6 +46,7 @@ pub fn run() {
             commands::collection::mark_caught,
             commands::collection::reset_hunt,
             commands::collection::get_living_dex_stats,
+            commands::collection::get_all_collection_entries,
             commands::hunt::increment_counter,
             commands::hunt::toggle_checklist,
             commands::hunt::get_active_hunts,

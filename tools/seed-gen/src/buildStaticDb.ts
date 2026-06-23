@@ -30,13 +30,23 @@ async function applyMigrations(db: DatabaseSync): Promise<void> {
 
 function insertPokemon(db: DatabaseSync, rows: PokemonRow[]): void {
   const stmt = db.prepare(`
-    INSERT INTO pokemon (id, name, display_name, form_id, form_name, generation, sprite_url, shiny_sprite_url, types, gender_rate, is_mythical, is_legendary)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO pokemon (
+      id, name, display_name, form_id, form_name, generation, sprite_url, shiny_sprite_url,
+      sprite_url_female, shiny_sprite_url_female, types, gender_rate, is_mythical, is_legendary,
+      is_baby, is_final_evolution, color, shape, growth_rate, egg_groups, capture_rate,
+      base_happiness, height, weight, abilities, stat_hp, stat_attack, stat_defense,
+      stat_special_attack, stat_special_defense, stat_speed, stat_total
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const r of rows) {
     stmt.run(
       r.id, r.name, r.display_name, r.form_id, r.form_name, r.generation,
-      r.sprite_url, r.shiny_sprite_url, r.types, r.gender_rate, b(r.is_mythical), b(r.is_legendary)
+      r.sprite_url, r.shiny_sprite_url, r.sprite_url_female, r.shiny_sprite_url_female,
+      r.types, r.gender_rate, b(r.is_mythical), b(r.is_legendary), b(r.is_baby), b(r.is_final_evolution),
+      r.color, r.shape, r.growth_rate, r.egg_groups, r.capture_rate, r.base_happiness,
+      r.height, r.weight, r.abilities, r.stat_hp, r.stat_attack, r.stat_defense,
+      r.stat_special_attack, r.stat_special_defense, r.stat_speed, r.stat_total
     );
   }
 }

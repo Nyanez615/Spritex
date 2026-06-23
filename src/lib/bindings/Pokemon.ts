@@ -2,10 +2,27 @@
 
 export type Pokemon = { id: number, name: string, display_name: string, form_id: number, form_name: string | null, generation: number, sprite_url: string, shiny_sprite_url: string, 
 /**
+ * Gender-difference sprites — None for the ~90% of species with no visual gender difference.
+ */
+sprite_url_female: string | null, shiny_sprite_url_female: string | null, 
+/**
  * JSON-encoded array of type names, e.g. `["grass","poison"]`
  */
 types: string, 
 /**
  * -1 = genderless, 0 = always male, 8 = always female
  */
-gender_rate: number, is_mythical: boolean, is_legendary: boolean, };
+gender_rate: number, is_mythical: boolean, is_legendary: boolean, is_baby: boolean, is_final_evolution: boolean, color: string, shape: string | null, growth_rate: string, 
+/**
+ * JSON-encoded array of egg group names, e.g. `["monster","plant"]`
+ */
+egg_groups: string, capture_rate: number, base_happiness: number, height: number, weight: number, 
+/**
+ * JSON-encoded array of ability names
+ */
+abilities: string, 
+/**
+ * Base stats at level 100 — max neutral IVs (31), 0 EVs, neutral nature.
+ * Not raw PokéAPI base_stat values.
+ */
+stat_hp: number, stat_attack: number, stat_defense: number, stat_special_attack: number, stat_special_defense: number, stat_speed: number, stat_total: number, };

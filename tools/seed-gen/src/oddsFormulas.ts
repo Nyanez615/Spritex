@@ -47,9 +47,16 @@ const ALL_GAMES_EXCEPT_GEN1_AND_GO: Game[] = [
   "gen3_rs",
   "gen3_e",
   "gen3_frlg",
+  "colosseum",
+  "xd",
   "gen4_dp",
   "gen4_pt",
   "gen4_hgss",
+  "ranger",
+  "ranger_soa",
+  "dream_world",
+  "dream_radar",
+  "ranger_gs",
   "gen5_bw",
   "gen5_b2_w2",
   "gen6_xy",
@@ -61,6 +68,7 @@ const ALL_GAMES_EXCEPT_GEN1_AND_GO: Game[] = [
   "bdsp",
   "pla",
   "sv",
+  "legends_za",
 ];
 
 function rollsToOdds(denom: number, rolls: number): number {

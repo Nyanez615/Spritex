@@ -2,6 +2,26 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use ts_rs::TS;
 
+/// Audited against Bulbapedia's full `Pokémon games` index (120+ titles) for every
+/// game — core or side — with a real mechanism to put a PID-bearing Pokémon into a
+/// game that eventually reaches HOME, not just battle with borrowed/virtual ones.
+/// Deliberately excluded, with reasons checked rather than assumed:
+/// - **Pokémon Champions** — recruited Pokémon can't be deposited to HOME; a
+///   one-way borrow-and-return loop with no shiny-acquisition mechanic of its own
+///   (same reasoning that already excludes Pal-Park-style pure transfers).
+/// - **Pokémon Pinball: Ruby & Sapphire** — confirmed via direct research to have
+///   no transfer feature at all, despite a common assumption otherwise.
+/// - **PokéPark Wii / PokéPark 2** — no evidence found of any Pokémon-transfer mechanism.
+/// - **Pokémon Stadium / Stadium 2, Pokémon Box, Pokémon Bank, Pokémon HOME itself**
+///   — relay/storage/battle-simulator infrastructure that moves existing Pokémon,
+///   not a catching mechanic that creates new ones.
+/// - The entire TCG/puzzle/rhythm/photography/edutainment catalog (Trading Card Game,
+///   Puzzle League, Trozei, Shuffle, Pokkén, Detective Pikachu, Snap, Conquest,
+///   Mystery Dungeon, Rumble, Duel, Magikarp Jump, Quest, and the rest of Bulbapedia's
+///   ~80-title minigame/spinoff long tail) — none create a real Pokémon instance.
+/// - **Pokémon Winds and Waves** — real, confirmed via independent official Nintendo
+///   sources, but announced for 2027 — hasn't released, so there's nothing to scrape
+///   yet; a known near-future addition, not modeled speculatively.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
 #[ts(export)]
 #[serde(rename_all = "snake_case")]
@@ -11,9 +31,16 @@ pub enum Game {
     Gen3Rs,
     Gen3E,
     Gen3Frlg,
+    Colosseum,
+    Xd,
     Gen4Dp,
     Gen4Pt,
     Gen4Hgss,
+    Ranger,
+    RangerSoa,
+    DreamWorld,
+    DreamRadar,
+    RangerGs,
     Gen5Bw,
     Gen5B2W2,
     Gen6Xy,
@@ -25,6 +52,7 @@ pub enum Game {
     Bdsp,
     Pla,
     Sv,
+    LegendsZa,
     Go,
 }
 
@@ -38,9 +66,16 @@ impl Game {
             Game::Gen3Rs => "gen3_rs",
             Game::Gen3E => "gen3_e",
             Game::Gen3Frlg => "gen3_frlg",
+            Game::Colosseum => "colosseum",
+            Game::Xd => "xd",
             Game::Gen4Dp => "gen4_dp",
             Game::Gen4Pt => "gen4_pt",
             Game::Gen4Hgss => "gen4_hgss",
+            Game::Ranger => "ranger",
+            Game::RangerSoa => "ranger_soa",
+            Game::DreamWorld => "dream_world",
+            Game::DreamRadar => "dream_radar",
+            Game::RangerGs => "ranger_gs",
             Game::Gen5Bw => "gen5_bw",
             // Matches serde's derived snake_case for this variant exactly
             // (it splits on the digit→letter boundary too: "b2_w2", not "b2w2") —
@@ -55,6 +90,7 @@ impl Game {
             Game::Bdsp => "bdsp",
             Game::Pla => "pla",
             Game::Sv => "sv",
+            Game::LegendsZa => "legends_za",
             Game::Go => "go",
         }
     }
@@ -69,9 +105,16 @@ impl FromStr for Game {
             "gen3_rs" => Ok(Game::Gen3Rs),
             "gen3_e" => Ok(Game::Gen3E),
             "gen3_frlg" => Ok(Game::Gen3Frlg),
+            "colosseum" => Ok(Game::Colosseum),
+            "xd" => Ok(Game::Xd),
             "gen4_dp" => Ok(Game::Gen4Dp),
             "gen4_pt" => Ok(Game::Gen4Pt),
             "gen4_hgss" => Ok(Game::Gen4Hgss),
+            "ranger" => Ok(Game::Ranger),
+            "ranger_soa" => Ok(Game::RangerSoa),
+            "dream_world" => Ok(Game::DreamWorld),
+            "dream_radar" => Ok(Game::DreamRadar),
+            "ranger_gs" => Ok(Game::RangerGs),
             "gen5_bw" => Ok(Game::Gen5Bw),
             "gen5_b2_w2" => Ok(Game::Gen5B2W2),
             "gen6_xy" => Ok(Game::Gen6Xy),
@@ -83,6 +126,7 @@ impl FromStr for Game {
             "bdsp" => Ok(Game::Bdsp),
             "pla" => Ok(Game::Pla),
             "sv" => Ok(Game::Sv),
+            "legends_za" => Ok(Game::LegendsZa),
             "go" => Ok(Game::Go),
             other => Err(format!("unknown game: {other}")),
         }
@@ -210,12 +254,37 @@ pub struct Pokemon {
     pub generation: i32,
     pub sprite_url: String,
     pub shiny_sprite_url: String,
+    /// Gender-difference sprites — None for the ~90% of species with no visual gender difference.
+    pub sprite_url_female: Option<String>,
+    pub shiny_sprite_url_female: Option<String>,
     /// JSON-encoded array of type names, e.g. `["grass","poison"]`
     pub types: String,
     /// -1 = genderless, 0 = always male, 8 = always female
     pub gender_rate: i32,
     pub is_mythical: bool,
     pub is_legendary: bool,
+    pub is_baby: bool,
+    pub is_final_evolution: bool,
+    pub color: String,
+    pub shape: Option<String>,
+    pub growth_rate: String,
+    /// JSON-encoded array of egg group names, e.g. `["monster","plant"]`
+    pub egg_groups: String,
+    pub capture_rate: i32,
+    pub base_happiness: i32,
+    pub height: i32,
+    pub weight: i32,
+    /// JSON-encoded array of ability names
+    pub abilities: String,
+    /// Base stats at level 100 — max neutral IVs (31), 0 EVs, neutral nature.
+    /// Not raw PokéAPI base_stat values.
+    pub stat_hp: i32,
+    pub stat_attack: i32,
+    pub stat_defense: i32,
+    pub stat_special_attack: i32,
+    pub stat_special_defense: i32,
+    pub stat_speed: i32,
+    pub stat_total: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

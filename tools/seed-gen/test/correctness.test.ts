@@ -112,3 +112,118 @@ test("every row's odds_optimized is at least as good as (<=) its odds_base", asy
     );
   }
 });
+
+test("Bulbasaur (#1) color is green and its level-100 stats match the confirmed formula (max neutral IV, 0 EV, neutral nature)", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const bulbasaur = pokemon.find((p) => p.id === 1 && p.form_id === 0);
+  assert.ok(bulbasaur);
+  assert.equal(bulbasaur!.color, "green");
+  // Raw base stats (PokéAPI): hp 45, atk 49, def 49, spa 65, spd 65, spe 45.
+  // At level 100 with 31 IV / 0 EV / neutral nature: HP = 2*base+141, others = 2*base+36.
+  assert.equal(bulbasaur!.stat_hp, 231);
+  assert.equal(bulbasaur!.stat_attack, 134);
+  assert.equal(bulbasaur!.stat_defense, 134);
+  assert.equal(bulbasaur!.stat_special_attack, 166);
+  assert.equal(bulbasaur!.stat_special_defense, 166);
+  assert.equal(bulbasaur!.stat_speed, 126);
+  assert.equal(bulbasaur!.stat_total, 957);
+});
+
+test("Pichu (#172, a baby Pokémon) is marked is_baby; Pikachu (its evolution) is not", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const pichu = pokemon.find((p) => p.id === 172 && p.form_id === 0);
+  const pikachu = pokemon.find((p) => p.id === 25 && p.form_id === 0);
+  assert.ok(pichu);
+  assert.ok(pikachu);
+  assert.equal(pichu!.is_baby, true);
+  assert.equal(pikachu!.is_baby, false);
+});
+
+test("Pyroar (#668, a confirmed gender-difference species) has a non-null female sprite", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const pyroar = pokemon.find((p) => p.id === 668 && p.form_id === 0);
+  assert.ok(pyroar);
+  assert.ok(pyroar!.sprite_url_female, "expected Pyroar to have a female sprite URL");
+  assert.ok(pyroar!.shiny_sprite_url_female, "expected Pyroar to have a shiny female sprite URL");
+});
+
+test("Bulbasaur (#1, no gender difference) has null female sprite fields", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const bulbasaur = pokemon.find((p) => p.id === 1 && p.form_id === 0);
+  assert.ok(bulbasaur);
+  assert.equal(bulbasaur!.sprite_url_female, null);
+  assert.equal(bulbasaur!.shiny_sprite_url_female, null);
+});
+
+test("Charizard (#6, fully evolved) is marked is_final_evolution; Charmander (#4, first stage) is not", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const charizard = pokemon.find((p) => p.id === 6 && p.form_id === 0);
+  const charmander = pokemon.find((p) => p.id === 4 && p.form_id === 0);
+  assert.ok(charizard, "expected Charizard in pokemon.json");
+  assert.ok(charmander, "expected Charmander in pokemon.json");
+  assert.equal(charizard!.is_final_evolution, true);
+  assert.equal(charmander!.is_final_evolution, false);
+});
+
+test("Tauros (#128, no evolution line at all) is marked is_final_evolution, including all 3 Paldean breed forms", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const tauros = pokemon.filter((p) => p.id === 128);
+  assert.ok(tauros.length > 0, "expected Tauros in pokemon.json");
+  for (const t of tauros) {
+    assert.equal(t.is_final_evolution, true, `expected ${t.display_name} to be final-evolution (no evolution line)`);
+  }
+});
+
+test("Espeon (#196), a non-Shadow gift, is Shiny-locked in Colosseum but huntable in XD at 1/8192 (Bulbapedia's own Shiny Pokémon article: Colosseum locks non-Shadow gifts like the starter Espeon/Umbreon; XD is the inverse and allows them)", async () => {
+  const rows = await methodsFor(196);
+  const colosseum = rows.find((r) => r.game === "colosseum" && r.method === "wild");
+  const xd = rows.find((r) => r.game === "xd" && r.method === "wild");
+  assert.equal(colosseum, undefined, "expected no colosseum row for Espeon (non-Shadow gift, locked there)");
+  assert.ok(xd, "expected an xd/wild row for Espeon (non-Shadow evolution route, allowed there)");
+  assert.equal(xd!.odds_base, 8192);
+  assert.equal(xd!.odds_optimized, 8192);
+});
+
+test("Makuhita (#296), a genuine Shadow Pokémon in both games, is huntable in Colosseum at 1/8192 but Shiny-locked in XD (the games have opposite Shadow-Pokémon Shiny rules, confirmed via Bulbapedia's own Shiny Pokémon article)", async () => {
+  const rows = await methodsFor(296);
+  const colosseum = rows.find((r) => r.game === "colosseum" && r.method === "wild");
+  const xd = rows.find((r) => r.game === "xd" && r.method === "wild");
+  assert.ok(colosseum, "expected a colosseum/wild row for Makuhita (genuine Shadow Pokémon, allowed there)");
+  assert.equal(colosseum!.odds_base, 8192);
+  assert.equal(xd, undefined, "expected no xd row for Makuhita (Shadow Pokémon, locked there)");
+});
+
+test("Sableye (#302) has no Colosseum or XD shiny_methods rows (XD-exclusive Shadow Pokémon: not obtainable in Colosseum at all, and Shiny-locked in XD)", async () => {
+  const rows = await methodsFor(302);
+  assert.ok(rows.every((r) => r.game !== "colosseum" && r.game !== "xd"));
+});
+
+test("Furfrou (#676) is huntable in Legends: Z-A at 1/4096 (1/1024 with Charm — confirmed +3 rolls, same Legends-series exception as PLA)", async () => {
+  const rows = await methodsFor(676);
+  const za = rows.find((r) => r.game === "legends_za" && r.method === "wild");
+  assert.ok(za, "expected a legends_za/wild row for Furfrou");
+  assert.equal(za!.odds_base, 4096);
+  assert.equal(za!.odds_optimized, 1024);
+});
+
+test("Manaphy (#490) is huntable via its egg in all 3 Ranger games at 1/8192 (Bulbapedia's shiny-lock page shows it obtainable, overturning the secondhand 'locked' assumption)", async () => {
+  const rows = await methodsFor(490);
+  for (const game of ["ranger", "ranger_soa", "ranger_gs"]) {
+    const row = rows.find((r) => r.game === game && r.method === "wild");
+    assert.ok(row, `expected a ${game}/wild row for Manaphy`);
+    assert.equal(row!.odds_base, 8192);
+  }
+});
+
+test("Dream Radar's roster grants Riolu (#447) a dream_radar row at 1/8192, no Charm", async () => {
+  const rows = await methodsFor(447);
+  const dreamRadar = rows.find((r) => r.game === "dream_radar" && r.method === "wild");
+  assert.ok(dreamRadar, "expected a dream_radar/wild row for Riolu (confirmed on the Dream Radar roster page)");
+  assert.equal(dreamRadar!.odds_base, 8192);
+  assert.equal(dreamRadar!.odds_optimized, 8192);
+});
+
+test("Dream World contributes zero shiny_methods rows (confirmed fully shiny-locked, not a gap)", async () => {
+  const all = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  assert.ok(all.every((r) => r.game !== "dream_world"));
+});

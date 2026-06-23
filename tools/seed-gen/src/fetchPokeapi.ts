@@ -52,15 +52,24 @@ interface PokeApiSpecies {
   gender_rate: number;
   is_legendary: boolean;
   is_mythical: boolean;
+  is_baby: boolean;
   generation: PokeApiNamedResource;
   egg_groups: PokeApiNamedResource[];
   names: PokeApiLocalizedName[];
   varieties: Array<{ is_default: boolean; pokemon: PokeApiNamedResource }>;
+  color: PokeApiNamedResource;
+  shape: PokeApiNamedResource | null;
+  growth_rate: PokeApiNamedResource;
+  capture_rate: number;
+  base_happiness: number;
+  evolution_chain: { url: string };
 }
 
 interface PokeApiSprites {
   front_default: string | null;
   front_shiny: string | null;
+  front_female: string | null;
+  front_shiny_female: string | null;
   other?: {
     "official-artwork"?: { front_default: string | null; front_shiny: string | null };
     home?: { front_default: string | null; front_shiny: string | null };
@@ -70,9 +79,13 @@ interface PokeApiSprites {
 interface PokeApiPokemon {
   id: number;
   name: string;
+  height: number;
+  weight: number;
   types: Array<{ slot: number; type: PokeApiNamedResource }>;
   sprites: PokeApiSprites;
   forms: PokeApiNamedResource[];
+  stats: Array<{ base_stat: number; stat: PokeApiNamedResource }>;
+  abilities: Array<{ ability: PokeApiNamedResource; is_hidden: boolean }>;
 }
 
 interface PokeApiForm {
@@ -89,6 +102,25 @@ export interface FetchedVariety {
   types: string[];
   spriteUrl: string;
   shinySpriteUrl: string;
+  /** Gender-difference sprites — null for the ~90% of species with no visual gender difference. */
+  spriteUrlFemale: string | null;
+  shinySpriteUrlFemale: string | null;
+  height: number;
+  weight: number;
+  abilities: string[];
+  /**
+   * Base stats computed at level 100 with max neutral IVs (31), 0 EVs, neutral
+   * nature — Bulbapedia's standard Gen 3+ stat formula collapses to
+   * `2*base+141` for HP and `2*base+36` for every other stat at those inputs.
+   * Confirmed convention with the user; not raw PokéAPI base_stat values.
+   */
+  statHp: number;
+  statAttack: number;
+  statDefense: number;
+  statSpecialAttack: number;
+  statSpecialDefense: number;
+  statSpeed: number;
+  statTotal: number;
 }
 
 export interface FetchedSpecies {
@@ -99,7 +131,16 @@ export interface FetchedSpecies {
   genderRate: number;
   isLegendary: boolean;
   isMythical: boolean;
+  isBaby: boolean;
   isBreedable: boolean;
+  color: string;
+  /** Null for a handful of legacy species PokéAPI never assigned a shape to. */
+  shape: string | null;
+  growthRate: string;
+  eggGroups: string[];
+  captureRate: number;
+  baseHappiness: number;
+  evolutionChainUrl: string;
   varieties: FetchedVariety[];
 }
 
@@ -118,6 +159,19 @@ function bestSprite(sprites: PokeApiSprites, shiny: boolean): string {
   return fallback ?? "";
 }
 
+/**
+ * Gender-difference sprites only ever appear in the base `sprites.front_female`/
+ * `front_shiny_female` fields, never in the official-artwork/home sub-objects —
+ * unlike bestSprite() there's no fallback chain to walk.
+ */
+function femaleSprite(sprites: PokeApiSprites, shiny: boolean): string | null {
+  return shiny ? sprites.front_shiny_female : sprites.front_female;
+}
+
+function statAt100(base: number, isHp: boolean): number {
+  return isHp ? 2 * base + 141 : 2 * base + 36;
+}
+
 function generationNumberFromName(name: string): number {
   // "generation-i" .. "generation-ix"
   const roman = name.split("-")[1]?.toUpperCase() ?? "";
@@ -127,8 +181,33 @@ function generationNumberFromName(name: string): number {
   return romanToInt[roman] ?? 0;
 }
 
+function extractStats(stats: PokeApiPokemon["stats"]): Pick<FetchedVariety, "statHp" | "statAttack" | "statDefense" | "statSpecialAttack" | "statSpecialDefense" | "statSpeed" | "statTotal"> {
+  const base = (name: string) => stats.find((s) => s.stat.name === name)?.base_stat ?? 0;
+  const statHp = statAt100(base("hp"), true);
+  const statAttack = statAt100(base("attack"), false);
+  const statDefense = statAt100(base("defense"), false);
+  const statSpecialAttack = statAt100(base("special-attack"), false);
+  const statSpecialDefense = statAt100(base("special-defense"), false);
+  const statSpeed = statAt100(base("speed"), false);
+  return {
+    statHp, statAttack, statDefense, statSpecialAttack, statSpecialDefense, statSpeed,
+    statTotal: statHp + statAttack + statDefense + statSpecialAttack + statSpecialDefense + statSpeed,
+  };
+}
+
 async function fetchVarietyDetail(limiter: ConcurrencyLimiter, variety: { is_default: boolean; pokemon: PokeApiNamedResource }, fallbackDisplayName: string, formIndex: number): Promise<FetchedVariety | undefined> {
   const pokemon = await limiter.run(() => cachedJson<PokeApiPokemon>("pokeapi-pokemon", variety.pokemon.name, variety.pokemon.url));
+  const shared = {
+    types: pokemon.types.map((t) => t.type.name),
+    spriteUrl: bestSprite(pokemon.sprites, false),
+    shinySpriteUrl: bestSprite(pokemon.sprites, true),
+    spriteUrlFemale: femaleSprite(pokemon.sprites, false),
+    shinySpriteUrlFemale: femaleSprite(pokemon.sprites, true),
+    height: pokemon.height,
+    weight: pokemon.weight,
+    abilities: pokemon.abilities.map((a) => a.ability.name),
+    ...extractStats(pokemon.stats),
+  };
 
   if (!variety.is_default) {
     const formRef = pokemon.forms[0];
@@ -143,9 +222,7 @@ async function fetchVarietyDetail(limiter: ConcurrencyLimiter, variety: { is_def
       formId: formIndex,
       formName: adjective.trim(),
       displayName: formDisplayName,
-      types: pokemon.types.map((t) => t.type.name),
-      spriteUrl: bestSprite(pokemon.sprites, false),
-      shinySpriteUrl: bestSprite(pokemon.sprites, true),
+      ...shared,
     };
   }
 
@@ -153,9 +230,7 @@ async function fetchVarietyDetail(limiter: ConcurrencyLimiter, variety: { is_def
     formId: 0,
     formName: null,
     displayName: fallbackDisplayName,
-    types: pokemon.types.map((t) => t.type.name),
-    spriteUrl: bestSprite(pokemon.sprites, false),
-    shinySpriteUrl: bestSprite(pokemon.sprites, true),
+    ...shared,
   };
 }
 
@@ -200,7 +275,15 @@ export async function fetchAllSpecies(): Promise<FetchedSpecies[]> {
         genderRate: species.gender_rate,
         isLegendary: species.is_legendary,
         isMythical: species.is_mythical,
+        isBaby: species.is_baby,
         isBreedable,
+        color: species.color.name,
+        shape: species.shape?.name ?? null,
+        growthRate: species.growth_rate.name,
+        eggGroups: species.egg_groups.map((g) => g.name),
+        captureRate: species.capture_rate,
+        baseHappiness: species.base_happiness,
+        evolutionChainUrl: species.evolution_chain.url,
         varieties,
       });
 

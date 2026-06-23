@@ -272,3 +272,24 @@ pub async fn get_living_dex_stats(
     result.sort_by(|a, b| a.label.cmp(&b.label));
     Ok(result)
 }
+
+/// Backs the Pokédex grid's per-card status badges — every non-deleted
+/// collection row regardless of status, so the frontend can render
+/// caught/shiny/hunting indicators without an N+1 fetch per card.
+#[tauri::command]
+pub async fn get_all_collection_entries(state: State<'_, AppState>) -> Result<Vec<CollectionEntry>, String> {
+    let conn = require_sync_db(&state).await?;
+    let mut rows = conn
+        .query(
+            &format!("SELECT {COLLECTION_COLUMNS} FROM collection WHERE deleted_at IS NULL"),
+            (),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut entries = Vec::new();
+    while let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+        entries.push(row_to_collection_entry(&row)?);
+    }
+    Ok(entries)
+}

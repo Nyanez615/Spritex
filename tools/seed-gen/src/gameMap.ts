@@ -9,9 +9,16 @@ export const GAMES = [
   "gen3_rs",
   "gen3_e",
   "gen3_frlg",
+  "colosseum",
+  "xd",
   "gen4_dp",
   "gen4_pt",
   "gen4_hgss",
+  "ranger",
+  "ranger_soa",
+  "dream_world",
+  "dream_radar",
+  "ranger_gs",
   "gen5_bw",
   "gen5_b2_w2",
   "gen6_xy",
@@ -23,6 +30,7 @@ export const GAMES = [
   "bdsp",
   "pla",
   "sv",
+  "legends_za",
   "go",
 ] as const;
 export type Game = (typeof GAMES)[number];
@@ -55,9 +63,21 @@ export type Method = (typeof METHODS)[number];
  * Availability/EntryN templates), mapped to our Game bucket(s). Most map to
  * exactly one Game; "Pal Park" is the one genuine fan-out (it was available
  * identically from Diamond, Pearl, and Platinum, including in HeartGold and
- * SoulSilver's own Pal Park). Labels for games outside our 20-value Game
- * enum (Colosseum/XD, Legends: Z-A, Mega Dimension, Café ReMix, etc.) are
- * deliberately absent -> lookups return undefined -> skipped, not guessed.
+ * SoulSilver's own Pal Park). Labels for games outside our Game enum (Mega
+ * Dimension, Café ReMix, etc.) are deliberately absent -> lookups return
+ * undefined -> skipped, not guessed.
+ *
+ * Colosseum/XD/Legends: Z-A were initially assumed to need dedicated roster
+ * scrapers, but verified directly (fetched Pikachu's and Espeon's raw
+ * wikitext, and Furfrou's for Z-A) that Bulbapedia already tracks all three
+ * via this exact same Availability/EntryN template system ordinary mainline
+ * games use — genuine availability is the plain `Entry1`/`Entry2` form (e.g.
+ * Espeon's `{{Availability/Entry1|v=Colosseum|area=...First Pokémon}}`),
+ * while non-genuine/cameo mentions use the `/None` suffix (e.g. Pikachu's
+ * Colosseum entry, which only appears as a Bonus Disc cameo) — already
+ * correctly excluded by parseAvailability's `name.endsWith("/None")` check
+ * in scrapeBulbapedia.ts. So these three just need a label mapping here, no
+ * separate roster module.
  */
 export const BULBAPEDIA_LABEL_TO_GAMES: Record<string, Game[]> = {
   Red: ["gen1_vc"],
@@ -71,6 +91,8 @@ export const BULBAPEDIA_LABEL_TO_GAMES: Record<string, Game[]> = {
   Emerald: ["gen3_e"],
   FireRed: ["gen3_frlg"],
   LeafGreen: ["gen3_frlg"],
+  Colosseum: ["colosseum"],
+  XD: ["xd"],
   // "Pal Park" deliberately excluded: Bulbapedia models it as if it were its
   // own version, but it's a one-way transfer of an *already-caught* Pokémon
   // — no new shiny roll happens there. Treating it as availability would
@@ -111,10 +133,30 @@ export const BULBAPEDIA_LABEL_TO_GAMES: Record<string, Game[]> = {
   "The Hidden Treasure of Area Zero": ["sv"],
   "The Teal Mask": ["sv"],
   "The Indigo Disk": ["sv"],
+  "Legends: Z-A": ["legends_za"],
 };
 
-/** Games with no in-game breeding/Day Care — Masuda Method cannot apply. */
-export const NO_BREEDING_GAMES: ReadonlySet<Game> = new Set(["lgpe", "pla"]);
+/**
+ * Games with no in-game breeding/Day Care — Masuda Method cannot apply.
+ * Colosseum/XD: GameCube games, no Day Care of their own (breeding requires
+ * trading to a linked GBA cartridge). Ranger/Ranger: Shadows of Almia/
+ * Ranger: Guardian Signs/Dream World/Dream Radar: handheld-peripheral or
+ * distribution-app mechanics, not full games with a Day Care. Legends: Z-A:
+ * confirmed directly via Bulbapedia's own page — "Abilities, breeding, and
+ * Eggs are not featured in this game."
+ */
+export const NO_BREEDING_GAMES: ReadonlySet<Game> = new Set([
+  "lgpe",
+  "pla",
+  "colosseum",
+  "xd",
+  "ranger",
+  "ranger_soa",
+  "ranger_gs",
+  "dream_world",
+  "dream_radar",
+  "legends_za",
+]);
 
 /** Games where the Shiny Charm item exists (introduced in Black 2/White 2). */
 export const CHARM_AVAILABLE_GAMES: ReadonlySet<Game> = new Set([
@@ -128,16 +170,21 @@ export const CHARM_AVAILABLE_GAMES: ReadonlySet<Game> = new Set([
   "bdsp",
   "pla",
   "sv",
+  "legends_za",
 ]);
 
 /**
  * Extra personality-value rolls the Shiny Charm grants — +2 everywhere except
- * PLA, which grants +3 (verified against Bulbapedia's "Shiny Pokémon" article,
- * Generation IX "Methods of increasing Shiny rates" section: the Charm+Research
- * Perfect combo's roll count only reconciles to the cited odds at +3, not +2).
+ * PLA and Legends: Z-A, both of which grant +3 (PLA verified against
+ * Bulbapedia's "Shiny Pokémon" article, Generation IX section: the
+ * Charm+Research Perfect combo's roll count only reconciles to the cited
+ * odds at +3, not +2; Z-A's searched Charm-boosted rate of ~1/1024 from a
+ * 1/4096 base only reconciles at 4 total rolls, i.e. +3 over the 1 base
+ * roll, matching the same Legends-series exception rather than the
+ * standard +2).
  */
 export function charmRollBonus(game: Game): number {
-  return game === "pla" ? 3 : 2;
+  return game === "pla" || game === "legends_za" ? 3 : 2;
 }
 
 /** Per-era base shiny-roll denominator (Gen6 halved it from 8192 to 4096). */
@@ -152,6 +199,7 @@ export function eraBaseDenominator(game: Game): number {
     "bdsp",
     "pla",
     "sv",
+    "legends_za",
   ]);
   return gen6Plus.has(game) ? 4096 : 8192;
 }

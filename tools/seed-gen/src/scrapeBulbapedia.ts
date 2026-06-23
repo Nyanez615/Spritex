@@ -40,6 +40,21 @@
  * disambiguated by a breed qualifier in parens: "Paldean Form (Combat
  * Breed)", or "Paldean Form (Combat and Blaze Breeds)" for a single
  * location shared by two breeds.
+ *
+ * Colosseum/XD need one more piece of per-entry context: Bulbapedia tags
+ * genuine Shadow Pokémon entries inline with `{{color2|{{shadow
+ * color}}|Shadow Pokémon|(Shadow)}}` in the `area=` text (verified against
+ * Sableye's and Makuhita's pages). This matters because the two games have
+ * *opposite* Shiny rules for the mechanic — confirmed directly against
+ * Bulbapedia's own "Shiny Pokémon" article: in Colosseum, only genuine
+ * Shadow Pokémon can be Shiny (non-Shadow gifts like the player's starter
+ * Espeon/Umbreon are explicitly called out there as Shiny-locked); in XD
+ * it's the exact inverse — the game "recalculat[es] the Pokémon's
+ * personality value" to prevent any Shadow Pokémon from being Shiny, while
+ * its non-Shadow Pokémon (initial Eevee, in-game trades, Poké Spot
+ * encounters) can be. So an entry only counts as real availability if it
+ * matches the genuinely-Shiny-rollable category for that specific game —
+ * see the `isShadowPokemon` check in parseAvailability below.
  */
 import type { FetchedSpecies, FetchedVariety } from "./fetchPokeapi.js";
 import { BULBAPEDIA_LABEL_TO_GAMES, type Game } from "./gameMap.js";
@@ -124,13 +139,19 @@ export function parseAvailability(wikitext: string, varieties: FetchedVariety[])
     const { name, params } = parseTemplateCall(call);
     if (name.endsWith("/None")) continue; // not obtainable in this version, by any means
 
+    const isShadowPokemon = /shadow color/i.test(params.area ?? "");
     const versionLabels = [params.v, params.v2].filter((v): v is string => Boolean(v));
     const formIds = resolveFormIds(params.area ?? "", varieties);
 
     for (const label of versionLabels) {
       const games = BULBAPEDIA_LABEL_TO_GAMES[label];
-      if (!games) continue; // game outside our 20-value enum (Colosseum, Legends: Z-A, etc.) — skip, don't guess
+      if (!games) continue; // game outside our Game enum (Mega Dimension, Café ReMix, etc.) — skip, don't guess
       for (const game of games) {
+        // Colosseum/XD have opposite Shiny rules for Shadow Pokémon (see
+        // this file's header) — only the genuinely-rollable category
+        // counts as availability for each.
+        if (game === "colosseum" && !isShadowPokemon) continue;
+        if (game === "xd" && isShadowPokemon) continue;
         for (const formId of formIds) results.push({ game, formId });
       }
     }

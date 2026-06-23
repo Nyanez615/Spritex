@@ -24,7 +24,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { errorMessage, formatGenderRate, formatOdds, parseJsonArray } from "@/lib/format";
-import { GAME_LABELS, METHOD_LABELS } from "@/lib/labels";
+import { GAME_LABELS, METHOD_LABELS, POKEMON_COLOR_HEX, TYPE_COLORS, humanize } from "@/lib/labels";
 import { invalidateCollectionAggregates, queryKeys } from "@/lib/queryKeys";
 import {
   getCollectionEntry,
@@ -38,6 +38,7 @@ import {
   type ChecklistField,
   type CollectionEntry,
   type CollectionStatus,
+  type Pokemon,
   type ShinyMethod,
 } from "@/lib/tauri";
 
@@ -118,6 +119,7 @@ function PokemonDetail() {
   }
 
   const types = parseJsonArray(pokemon.types);
+  const hasGenderSprites = Boolean(pokemon.sprite_url_female || pokemon.shiny_sprite_url_female);
 
   return (
     <div className="flex flex-col h-full w-full">
@@ -133,24 +135,32 @@ function PokemonDetail() {
       </div>
       <div className="flex-1 overflow-auto p-6 space-y-6">
         <div className="flex gap-6">
-          <div className="flex gap-4">
-            <SpriteBlock src={pokemon.sprite_url} label="Standard" />
-            <SpriteBlock src={pokemon.shiny_sprite_url} label="Shiny" />
+          <div className="flex gap-4 flex-wrap">
+            <SpriteBlock src={pokemon.sprite_url} label={hasGenderSprites ? "Male" : "Standard"} />
+            <SpriteBlock src={pokemon.shiny_sprite_url} label={hasGenderSprites ? "Shiny Male" : "Shiny"} />
+            {pokemon.sprite_url_female && <SpriteBlock src={pokemon.sprite_url_female} label="Female" />}
+            {pokemon.shiny_sprite_url_female && (
+              <SpriteBlock src={pokemon.shiny_sprite_url_female} label="Shiny Female" />
+            )}
           </div>
           <div className="flex flex-col gap-2 justify-center">
             <div className="flex gap-1.5 flex-wrap">
-              {types.map((t) => (
-                <Badge key={t} variant="secondary" className="capitalize">
-                  {t}
-                </Badge>
-              ))}
               {pokemon.is_legendary && <Badge variant="outline">Legendary</Badge>}
               {pokemon.is_mythical && <Badge variant="outline">Mythical</Badge>}
+              {pokemon.is_baby && <Badge variant="outline">Baby</Badge>}
+              <Badge variant="outline">{pokemon.is_final_evolution ? "Final Evolution" : "Not Fully Evolved"}</Badge>
             </div>
             <p className="text-sm text-muted-foreground">Generation {pokemon.generation}</p>
-            <p className="text-sm text-muted-foreground">{formatGenderRate(pokemon.gender_rate)}</p>
           </div>
         </div>
+
+        <Separator />
+
+        <ProfileSection pokemon={pokemon} types={types} />
+
+        <Separator />
+
+        <StatsSection pokemon={pokemon} />
 
         <Separator />
 
@@ -202,6 +212,108 @@ function SpriteBlock({ src, label }: { src: string; label: string }) {
         <img src={src} alt={label} className="h-20 w-20" />
       </div>
       <span className="text-xs text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+
+function TypeBadge({ type }: { type: string }) {
+  const color = TYPE_COLORS[type];
+  return (
+    <Badge
+      variant="outline"
+      className="capitalize"
+      style={color ? { borderColor: `${color}80`, color, backgroundColor: `${color}1a` } : undefined}
+    >
+      {type}
+    </Badge>
+  );
+}
+
+function ProfileField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <div className="text-sm text-foreground mt-0.5">{children}</div>
+    </div>
+  );
+}
+
+function ProfileSection({ pokemon, types }: { pokemon: Pokemon; types: string[] }) {
+  const eggGroups = parseJsonArray(pokemon.egg_groups);
+  const abilities = parseJsonArray(pokemon.abilities);
+  const colorHex = POKEMON_COLOR_HEX[pokemon.color];
+
+  return (
+    <div>
+      <h2 className="text-sm font-semibold text-foreground mb-3">Profile</h2>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-w-2xl">
+        <ProfileField label="Types">
+          <div className="flex gap-1.5 flex-wrap">
+            {types.map((t) => (
+              <TypeBadge key={t} type={t} />
+            ))}
+          </div>
+        </ProfileField>
+        <ProfileField label="Gender">{formatGenderRate(pokemon.gender_rate)}</ProfileField>
+        <ProfileField label="Height">{(pokemon.height / 10).toFixed(1)} m</ProfileField>
+        <ProfileField label="Weight">{(pokemon.weight / 10).toFixed(1)} kg</ProfileField>
+        <ProfileField label="Color">
+          <span className="flex items-center gap-1.5">
+            {colorHex && (
+              <span className="size-3 rounded-full border border-border/50 shrink-0" style={{ backgroundColor: colorHex }} />
+            )}
+            {humanize(pokemon.color)}
+          </span>
+        </ProfileField>
+        <ProfileField label="Shape">{pokemon.shape ? humanize(pokemon.shape) : "—"}</ProfileField>
+        <ProfileField label="Growth Rate">{humanize(pokemon.growth_rate)}</ProfileField>
+        <ProfileField label="Egg Groups">{eggGroups.length > 0 ? eggGroups.map(humanize).join(", ") : "—"}</ProfileField>
+        <ProfileField label="Capture Rate">{pokemon.capture_rate}</ProfileField>
+        <ProfileField label="Base Happiness">{pokemon.base_happiness}</ProfileField>
+        <ProfileField label="Abilities">{abilities.length > 0 ? abilities.map(humanize).join(", ") : "—"}</ProfileField>
+      </div>
+    </div>
+  );
+}
+
+// Conservative ceiling so bars are visually comparable across species without per-page rescaling.
+const STAT_BAR_MAX = 700;
+
+function StatsSection({ pokemon }: { pokemon: Pokemon }) {
+  const stats: Array<[string, number]> = [
+    ["HP", pokemon.stat_hp],
+    ["Attack", pokemon.stat_attack],
+    ["Defense", pokemon.stat_defense],
+    ["Sp. Atk", pokemon.stat_special_attack],
+    ["Sp. Def", pokemon.stat_special_defense],
+    ["Speed", pokemon.stat_speed],
+  ];
+
+  return (
+    <div>
+      <h2 className="text-sm font-semibold text-foreground mb-3">
+        Base Stats{" "}
+        <span className="text-xs font-normal text-muted-foreground">(at level 100, max IVs, neutral nature)</span>
+      </h2>
+      <div className="space-y-1.5 max-w-md">
+        {stats.map(([label, value]) => (
+          <div key={label} className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground w-16 shrink-0">{label}</span>
+            <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full"
+                style={{ width: `${Math.min(100, (value / STAT_BAR_MAX) * 100)}%` }}
+              />
+            </div>
+            <span className="text-xs text-foreground w-10 text-right tabular-nums">{value}</span>
+          </div>
+        ))}
+        <div className="flex items-center gap-2 pt-1.5 mt-1 border-t border-border/50">
+          <span className="text-xs font-medium text-foreground w-16 shrink-0">Total</span>
+          <div className="flex-1" />
+          <span className="text-xs font-medium text-foreground w-10 text-right tabular-nums">{pokemon.stat_total}</span>
+        </div>
+      </div>
     </div>
   );
 }

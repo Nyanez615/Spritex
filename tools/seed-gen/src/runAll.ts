@@ -4,6 +4,7 @@
  * a partial failure resumes cheaply rather than re-fetching everything.
  */
 import { runFetchPokeapi } from "./fetchPokeapi.js";
+import { runFetchEvolutionChains } from "./fetchEvolutionChains.js";
 import { runScrapeBulbapedia } from "./scrapeBulbapedia.js";
 import { runScrapeShinyLocks } from "./scrapeShinyLocks.js";
 import { runScrapeDynamaxAdventure } from "./scrapeDynamaxAdventure.js";
@@ -12,19 +13,21 @@ import { runDeriveShinyMethods } from "./deriveShinyMethods.js";
 import { runBuildStaticDb } from "./buildStaticDb.js";
 
 async function main() {
-  console.log("=== 1/7 fetchPokeapi ===");
+  console.log("=== 1/8 fetchPokeapi ===");
   await runFetchPokeapi();
-  console.log("=== 2/7 scrapeBulbapedia ===");
+  console.log("=== 2/8 fetchEvolutionChains ===");
+  await runFetchEvolutionChains();
+  console.log("=== 3/8 scrapeBulbapedia ===");
   await runScrapeBulbapedia();
-  console.log("=== 3/7 scrapeShinyLocks ===");
+  console.log("=== 4/8 scrapeShinyLocks ===");
   await runScrapeShinyLocks();
-  console.log("=== 4/7 scrapeDynamaxAdventure ===");
+  console.log("=== 5/8 scrapeDynamaxAdventure ===");
   await runScrapeDynamaxAdventure();
-  console.log("=== 5/7 scrapeFriendSafari ===");
+  console.log("=== 6/8 scrapeFriendSafari ===");
   await runScrapeFriendSafari();
-  console.log("=== 6/7 deriveShinyMethods ===");
+  console.log("=== 7/8 deriveShinyMethods ===");
   await runDeriveShinyMethods();
-  console.log("=== 7/7 buildStaticDb ===");
+  console.log("=== 8/8 buildStaticDb ===");
   await runBuildStaticDb();
   console.log("=== done ===");
 }

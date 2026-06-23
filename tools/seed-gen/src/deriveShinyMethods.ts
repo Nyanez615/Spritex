@@ -23,6 +23,12 @@
  *   their own scraped rosters (scrapeDynamaxAdventure.ts/
  *   scrapeFriendSafari.ts) — both are restricted-roster mechanics, unlike
  *   the game-level ones above.
+ * - Ranger/Ranger: Shadows of Almia/Ranger: Guardian Signs (Manaphy's egg)
+ *   and Dream Radar (its full catchable roster) get availability only via
+ *   rosterFacts.ts's small hardcoded species lists (resolveRosterKeys,
+ *   below) — neither game has a Bulbapedia "Game locations" version label
+ *   the way Colosseum/XD/Legends: Z-A turned out to, so the generic scraper
+ *   never produces availability for them on its own.
  * - go_wild/go_community_day are never emitted — GO is deferred entirely
  *   (see scrapeBulbapedia.ts's header).
  */
@@ -32,6 +38,7 @@ import type { AvailabilityOutput } from "./scrapeBulbapedia.js";
 import type { ShinyLockFact } from "./scrapeShinyLocks.js";
 import type { DynamaxAdventureFact } from "./scrapeDynamaxAdventure.js";
 import type { FriendSafariFact } from "./scrapeFriendSafari.js";
+import { RANGER_MANAPHY_SPECIES_NAMES, DREAM_RADAR_ROSTER_SPECIES_NAMES } from "./rosterFacts.js";
 import { buildOddsTable, pickBestMethodIndex, type OddsRow } from "./oddsFormulas.js";
 import { NO_BREEDING_GAMES, type Game, type Method } from "./gameMap.js";
 
@@ -44,10 +51,30 @@ export interface PokemonRow {
   generation: number;
   sprite_url: string;
   shiny_sprite_url: string;
+  sprite_url_female: string | null;
+  shiny_sprite_url_female: string | null;
   types: string;
   gender_rate: number;
   is_mythical: boolean;
   is_legendary: boolean;
+  is_baby: boolean;
+  is_final_evolution: boolean;
+  color: string;
+  shape: string | null;
+  growth_rate: string;
+  egg_groups: string;
+  capture_rate: number;
+  base_happiness: number;
+  height: number;
+  weight: number;
+  abilities: string;
+  stat_hp: number;
+  stat_attack: number;
+  stat_defense: number;
+  stat_special_attack: number;
+  stat_special_defense: number;
+  stat_speed: number;
+  stat_total: number;
 }
 
 export interface ShinyMethodRow {
@@ -70,13 +97,18 @@ function normalizeName(s: string): string {
   return s.toLowerCase().replace(/['.’]/g, "");
 }
 
-function resolveLockedGames(species: FetchedSpecies[], locks: ShinyLockFact[]): Map<string, Set<Game>> {
-  const locked = new Map<string, Set<Game>>();
+/** Keyed by both the raw PokéAPI name and the normalized display name, so callers can look up either form. */
+function buildSpeciesNameIndex(species: FetchedSpecies[]): Map<string, FetchedSpecies> {
   const byName = new Map<string, FetchedSpecies>();
   for (const s of species) {
     byName.set(s.name, s);
     byName.set(normalizeName(s.displayName), s);
   }
+  return byName;
+}
+
+function resolveLockedGames(byName: Map<string, FetchedSpecies>, locks: ShinyLockFact[]): Map<string, Set<Game>> {
+  const locked = new Map<string, Set<Game>>();
   let unmatched = 0;
 
   for (const lock of locks) {
@@ -99,6 +131,20 @@ function resolveLockedGames(species: FetchedSpecies[], locks: ShinyLockFact[]): 
 
   if (unmatched > 0) console.log(`  deriveShinyMethods: ${unmatched} shiny-lock entries didn't match a tracked species/form (skipped, not guessed)`);
   return locked;
+}
+
+/** Resolves rosterFacts.ts's hardcoded species-name lists to `pokemonId:0` keys (base form only — none of these rosters involve regional forms). */
+function resolveRosterKeys(byName: Map<string, FetchedSpecies>, names: string[]): string[] {
+  const keys: string[] = [];
+  for (const name of names) {
+    const candidate = byName.get(name) ?? byName.get(normalizeName(name));
+    if (!candidate) {
+      console.log(`  deriveShinyMethods: roster fact species "${name}" didn't match a tracked species (skipped, not guessed)`);
+      continue;
+    }
+    keys.push(`${candidate.pokemonId}:0`);
+  }
+  return keys;
 }
 
 function applicableMethods(
@@ -124,8 +170,10 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
   const locks = await readOutJson<ShinyLockFact[]>("shiny-locks.json");
   const daRosterFacts = await readOutJson<DynamaxAdventureFact[]>("dynamax-adventure.json");
   const friendSafariFacts = await readOutJson<FriendSafariFact[]>("friend-safari.json");
+  const finalEvolutionIds = new Set(await readOutJson<number[]>("final-evolutions.json"));
 
-  const lockedByForm = resolveLockedGames(species, locks);
+  const speciesByName = buildSpeciesNameIndex(species);
+  const lockedByForm = resolveLockedGames(speciesByName, locks);
   const daRoster = new Set(daRosterFacts.map((f) => `${f.pokemonId}:${f.formId}`));
   const friendSafariRoster = new Set(friendSafariFacts.map((f) => f.pokemonId));
 
@@ -152,6 +200,18 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
     if (!availableByForm.has(key)) availableByForm.set(key, new Set());
     availableByForm.get(key)!.add("gen6_xy");
   }
+  // rosterFacts.ts's small hardcoded rosters (Manaphy's Ranger-trilogy egg,
+  // Dream Radar's full catchable roster) — neither game has a Bulbapedia
+  // "Game locations" version label, so they're never added by the loop
+  // above; this is the only place either game ever gets availability.
+  for (const key of resolveRosterKeys(speciesByName, RANGER_MANAPHY_SPECIES_NAMES)) {
+    if (!availableByForm.has(key)) availableByForm.set(key, new Set());
+    for (const game of ["ranger", "ranger_soa", "ranger_gs"] as const) availableByForm.get(key)!.add(game);
+  }
+  for (const key of resolveRosterKeys(speciesByName, DREAM_RADAR_ROSTER_SPECIES_NAMES)) {
+    if (!availableByForm.has(key)) availableByForm.set(key, new Set());
+    availableByForm.get(key)!.add("dream_radar");
+  }
 
   const oddsByGame = new Map<Game, OddsRow[]>();
   for (const row of buildOddsTable()) {
@@ -173,10 +233,32 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
         generation: s.generationNumber,
         sprite_url: variety.spriteUrl,
         shiny_sprite_url: variety.shinySpriteUrl,
+        sprite_url_female: variety.spriteUrlFemale,
+        shiny_sprite_url_female: variety.shinySpriteUrlFemale,
         types: JSON.stringify(variety.types),
         gender_rate: s.genderRate,
         is_mythical: s.isMythical,
         is_legendary: s.isLegendary,
+        // Species-level facts — shared by every form/variety of this species.
+        is_baby: s.isBaby,
+        is_final_evolution: finalEvolutionIds.has(s.pokemonId),
+        color: s.color,
+        shape: s.shape,
+        growth_rate: s.growthRate,
+        egg_groups: JSON.stringify(s.eggGroups),
+        capture_rate: s.captureRate,
+        base_happiness: s.baseHappiness,
+        // Variety-level facts — these genuinely can differ by regional form.
+        height: variety.height,
+        weight: variety.weight,
+        abilities: JSON.stringify(variety.abilities),
+        stat_hp: variety.statHp,
+        stat_attack: variety.statAttack,
+        stat_defense: variety.statDefense,
+        stat_special_attack: variety.statSpecialAttack,
+        stat_special_defense: variety.statSpecialDefense,
+        stat_speed: variety.statSpeed,
+        stat_total: variety.statTotal,
       });
 
       const key = `${s.pokemonId}:${variety.formId}`;
