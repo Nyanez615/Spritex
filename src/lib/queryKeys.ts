@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { DexGroupBy } from "./bindings/DexGroupBy";
+import type { PokedexFilters } from "./bindings/PokedexFilters";
 
 /**
  * Shared query-key builders so the collection/hunt mutations spread across
@@ -8,6 +9,7 @@ import type { DexGroupBy } from "./bindings/DexGroupBy";
  * silently leave another view stale.
  */
 export const queryKeys = {
+  pokemonList: (filters: PokedexFilters) => ["pokemon-list", filters] as const,
   pokemonDetail: (pokemonId: number, formId: number) => ["pokemon-detail", pokemonId, formId] as const,
   methodsForPokemon: (pokemonId: number, formId: number) =>
     ["methods-for-pokemon", pokemonId, formId] as const,

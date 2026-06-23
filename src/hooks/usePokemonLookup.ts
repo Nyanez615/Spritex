@@ -1,6 +1,9 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/queryKeys";
 import { getPokemonList, type Pokemon } from "@/lib/tauri";
+
+const NO_FILTERS = { search: null, generation: null, legendary_or_mythical_only: null };
 
 /**
  * shiny_methods/collection rows only carry pokemon_id/form_id — every view
@@ -10,8 +13,8 @@ import { getPokemonList, type Pokemon } from "@/lib/tauri";
  */
 export function usePokemonLookup() {
   const { data: pokemonList } = useQuery({
-    queryKey: ["pokemon-list", {}],
-    queryFn: () => getPokemonList({ search: null, generation: null, legendary_or_mythical_only: null }),
+    queryKey: queryKeys.pokemonList(NO_FILTERS),
+    queryFn: () => getPokemonList(NO_FILTERS),
   });
 
   return useMemo(() => {
