@@ -300,6 +300,8 @@ pub struct Pokemon {
     pub ev_yield_special_attack: i32,
     pub ev_yield_special_defense: i32,
     pub ev_yield_speed: i32,
+    pub has_mega_evolution: bool,
+    pub has_gigantamax: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -343,6 +345,26 @@ pub struct CosmeticForm {
     pub shiny_sprite_url: String,
     /// PokéAPI item slug, e.g. "venusaurite" — None for Gigantamax (no held item).
     pub mega_stone_item: Option<String>,
+    /// JSON-encoded array of type names — Mega/Gmax forms can differ from the base form (e.g. Mega Charizard X is Fire/Dragon, not Fire/Flying).
+    pub types: String,
+    pub height: i32,
+    pub weight: i32,
+    /// JSON-encoded array of ability names — Mega forms typically have a single fixed ability, overriding the base form's normal/hidden ability slots.
+    pub abilities: String,
+    pub stat_hp: i32,
+    pub stat_attack: i32,
+    pub stat_defense: i32,
+    pub stat_special_attack: i32,
+    pub stat_special_defense: i32,
+    pub stat_speed: i32,
+    pub stat_total: i32,
+    pub base_experience: i32,
+    pub ev_yield_hp: i32,
+    pub ev_yield_attack: i32,
+    pub ev_yield_defense: i32,
+    pub ev_yield_special_attack: i32,
+    pub ev_yield_special_defense: i32,
+    pub ev_yield_speed: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

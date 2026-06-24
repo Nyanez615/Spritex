@@ -20,6 +20,8 @@ describe("validatePokedexSearch", () => {
       forms: [],
       evYieldStats: [],
       final: false,
+      hasMega: false,
+      hasGmax: false,
       sort: "dex",
       sortDir: "asc",
     });

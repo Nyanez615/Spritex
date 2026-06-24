@@ -38,6 +38,8 @@ CREATE TABLE pokemon (
     ev_yield_special_attack   INTEGER NOT NULL,
     ev_yield_special_defense  INTEGER NOT NULL,
     ev_yield_speed            INTEGER NOT NULL,
+    has_mega_evolution        INTEGER NOT NULL DEFAULT 0,
+    has_gigantamax            INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (id, form_id)
 );
 

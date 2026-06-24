@@ -21,9 +21,22 @@ const EXTRA_SORT_KEYS = [
   "name", "generation", "height", "weight", "capture_rate", "base_happiness",
   "stat_hp", "stat_attack", "stat_defense", "stat_special_attack", "stat_special_defense",
   "stat_speed", "stat_total", "base_experience", "ev_total",
+  "ev_yield_hp", "ev_yield_attack", "ev_yield_defense", "ev_yield_special_attack",
+  "ev_yield_special_defense", "ev_yield_speed",
 ] as const;
 export type SortKey = "dex" | (typeof EXTRA_SORT_KEYS)[number];
 export const SORT_KEYS: readonly SortKey[] = ["dex", ...EXTRA_SORT_KEYS];
+
+/** Which dropdown a SortKey belongs to in index.tsx's split sort UI — kept in sync with SORT_KEYS by a vitest assertion in pokedexFilter.test.ts. */
+export const GENERAL_SORT_KEYS: readonly SortKey[] = [
+  "dex", "name", "generation", "height", "weight", "capture_rate", "base_happiness",
+];
+export const STAT_SORT_KEYS: readonly SortKey[] = [
+  "stat_hp", "stat_attack", "stat_defense", "stat_special_attack", "stat_special_defense",
+  "stat_speed", "stat_total", "base_experience", "ev_total",
+  "ev_yield_hp", "ev_yield_attack", "ev_yield_defense", "ev_yield_special_attack",
+  "ev_yield_special_defense", "ev_yield_speed",
+];
 
 export function evYieldFor(p: Pokemon, key: StatKey): number {
   switch (key) {
@@ -54,6 +67,12 @@ const SORT_ACCESSORS: Record<Exclude<SortKey, "dex">, (p: Pokemon) => number | s
   ev_total: (p) =>
     p.ev_yield_hp + p.ev_yield_attack + p.ev_yield_defense +
     p.ev_yield_special_attack + p.ev_yield_special_defense + p.ev_yield_speed,
+  ev_yield_hp: (p) => p.ev_yield_hp,
+  ev_yield_attack: (p) => p.ev_yield_attack,
+  ev_yield_defense: (p) => p.ev_yield_defense,
+  ev_yield_special_attack: (p) => p.ev_yield_special_attack,
+  ev_yield_special_defense: (p) => p.ev_yield_special_defense,
+  ev_yield_speed: (p) => p.ev_yield_speed,
 };
 export const SORT_LABELS: Record<SortKey, string> = {
   dex: "Dex Number",
@@ -72,6 +91,12 @@ export const SORT_LABELS: Record<SortKey, string> = {
   stat_total: "Total Stats (Lv. 100)",
   base_experience: "EXP Yield",
   ev_total: "EV Yield (Total)",
+  ev_yield_hp: "EV Yield: HP",
+  ev_yield_attack: "EV Yield: Attack",
+  ev_yield_defense: "EV Yield: Defense",
+  ev_yield_special_attack: "EV Yield: Sp. Atk",
+  ev_yield_special_defense: "EV Yield: Sp. Def",
+  ev_yield_speed: "EV Yield: Speed",
 };
 
 export type SortDir = "asc" | "desc";
@@ -93,6 +118,12 @@ export const DEFAULT_SORT_DIRECTION: Record<SortKey, SortDir> = {
   stat_total: "desc",
   base_experience: "desc",
   ev_total: "desc",
+  ev_yield_hp: "desc",
+  ev_yield_attack: "desc",
+  ev_yield_defense: "desc",
+  ev_yield_special_attack: "desc",
+  ev_yield_special_defense: "desc",
+  ev_yield_speed: "desc",
 };
 
 export function genderBucket(rate: number): GenderBucket {
@@ -120,6 +151,8 @@ export type PokedexSearch = Partial<{
   forms: string[];
   evYieldStats: StatKey[];
   final: boolean;
+  hasMega: boolean;
+  hasGmax: boolean;
   sort: SortKey;
   sortDir: SortDir;
 }>;
@@ -144,6 +177,8 @@ export function validatePokedexSearch(search: Record<string, unknown>): PokedexS
     forms: arrayOf<string>(search.forms),
     evYieldStats: arrayOf<StatKey>(search.evYieldStats),
     final: search.final === true,
+    hasMega: search.hasMega === true,
+    hasGmax: search.hasGmax === true,
     sort,
     sortDir: search.sortDir === "asc" || search.sortDir === "desc" ? search.sortDir : DEFAULT_SORT_DIRECTION[sort],
   };
@@ -164,7 +199,9 @@ export function hasActivePokedexFilters(search: Required<PokedexSearch>): boolea
     search.abilities.length > 0 ||
     search.forms.length > 0 ||
     search.evYieldStats.length > 0 ||
-    search.final
+    search.final ||
+    search.hasMega ||
+    search.hasGmax
   );
 }
 
@@ -202,6 +239,8 @@ export function filterPokemon(pokemon: Pokemon[], search: Required<PokedexSearch
     if (selectedForms.size && (!p.form_name || !selectedForms.has(p.form_name))) return false;
     if (selectedEvYieldStats.size && !Array.from(selectedEvYieldStats).some((key) => evYieldFor(p, key) > 0)) return false;
     if (search.final && !p.is_final_evolution) return false;
+    if (search.hasMega && !p.has_mega_evolution) return false;
+    if (search.hasGmax && !p.has_gigantamax) return false;
     return true;
   });
 }

@@ -12,4 +12,12 @@ export type CosmeticForm = { id: number, pokemon_id: number, form_id: number, ki
 /**
  * PokéAPI item slug, e.g. "venusaurite" — None for Gigantamax (no held item).
  */
-mega_stone_item: string | null, };
+mega_stone_item: string | null, 
+/**
+ * JSON-encoded array of type names — Mega/Gmax forms can differ from the base form (e.g. Mega Charizard X is Fire/Dragon, not Fire/Flying).
+ */
+types: string, height: number, weight: number, 
+/**
+ * JSON-encoded array of ability names — Mega forms typically have a single fixed ability, overriding the base form's normal/hidden ability slots.
+ */
+abilities: string, stat_hp: number, stat_attack: number, stat_defense: number, stat_special_attack: number, stat_special_defense: number, stat_speed: number, stat_total: number, base_experience: number, ev_yield_hp: number, ev_yield_attack: number, ev_yield_defense: number, ev_yield_special_attack: number, ev_yield_special_defense: number, ev_yield_speed: number, };

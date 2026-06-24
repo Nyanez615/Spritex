@@ -162,6 +162,41 @@ function PokemonNavButton({
   );
 }
 
+/**
+ * Mega/Gigantamax forms can have genuinely different types/stats/abilities
+ * than the base form (e.g. Mega Charizard X is Fire/Dragon, not Fire/Flying)
+ * — overrides only those fields, leaving everything else (id, sprites,
+ * gender_rate, rarity flags, color/shape/breeding/capture-rate fields) on the
+ * base Pokémon, since none of that changes for a cosmetic battle form. A pure
+ * function (not inlined in the component) so it's directly unit-testable —
+ * the real Tauri backend this page depends on isn't reachable from a browser
+ * preview, so this is the only path to automated coverage of the view-switch.
+ */
+export function applyCosmeticForm(pokemon: Pokemon, form: CosmeticForm | null): Pokemon {
+  if (!form) return pokemon;
+  return {
+    ...pokemon,
+    types: form.types,
+    height: form.height,
+    weight: form.weight,
+    abilities: form.abilities,
+    stat_hp: form.stat_hp,
+    stat_attack: form.stat_attack,
+    stat_defense: form.stat_defense,
+    stat_special_attack: form.stat_special_attack,
+    stat_special_defense: form.stat_special_defense,
+    stat_speed: form.stat_speed,
+    stat_total: form.stat_total,
+    base_experience: form.base_experience,
+    ev_yield_hp: form.ev_yield_hp,
+    ev_yield_attack: form.ev_yield_attack,
+    ev_yield_defense: form.ev_yield_defense,
+    ev_yield_special_attack: form.ev_yield_special_attack,
+    ev_yield_special_defense: form.ev_yield_special_defense,
+    ev_yield_speed: form.ev_yield_speed,
+  };
+}
+
 function PokemonDetail() {
   // Keyed on the route's own params so every piece of local state below
   // (gallery index, stat-simulator inputs) resets when navigating from one
@@ -207,6 +242,8 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
       forms: rawSearchContext.forms ?? [],
       evYieldStats: rawSearchContext.evYieldStats ?? [],
       final: rawSearchContext.final ?? false,
+      hasMega: rawSearchContext.hasMega ?? false,
+      hasGmax: rawSearchContext.hasGmax ?? false,
       sort: ctxSort,
       sortDir: rawSearchContext.sortDir ?? DEFAULT_SORT_DIRECTION[ctxSort],
     };
@@ -294,6 +331,12 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
   });
 
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
+  // Set when the selected gallery sprite is a Mega/Gmax cosmetic form — drives
+  // displayPokemon below, which overrides only the fields that genuinely
+  // differ for that form (types/stats/abilities/etc.), so the Profile/Stats
+  // sections switch to show it without navigating anywhere. Null for every
+  // standard/shiny/gendered sprite, including back to standard.
+  const [selectedCosmeticForm, setSelectedCosmeticForm] = useState<CosmeticForm | null>(null);
 
   if (isLoading) {
     return <CenteredMessage text="Loading…" />;
@@ -302,27 +345,33 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
     return <CenteredMessage text={errorMessage(error) ?? FALLBACK_ERROR} />;
   }
 
-  const types = parseJsonArray(pokemon.types);
   const hasGenderSprites = Boolean(
     pokemon.sprite_url_female || pokemon.shiny_sprite_url_female,
   );
   const spriteVariants: SpriteVariant[] = [
-    { src: pokemon.sprite_url, label: hasGenderSprites ? "Male" : "Standard" },
+    { src: pokemon.sprite_url, label: hasGenderSprites ? "Male" : "Standard", cosmeticForm: null },
     {
       src: pokemon.shiny_sprite_url,
       label: hasGenderSprites ? "Shiny Male" : "Shiny",
+      cosmeticForm: null,
     },
     ...(pokemon.sprite_url_female
-      ? [{ src: pokemon.sprite_url_female, label: "Female" }]
+      ? [{ src: pokemon.sprite_url_female, label: "Female", cosmeticForm: null }]
       : []),
     ...(pokemon.shiny_sprite_url_female
-      ? [{ src: pokemon.shiny_sprite_url_female, label: "Shiny Female" }]
+      ? [{ src: pokemon.shiny_sprite_url_female, label: "Shiny Female", cosmeticForm: null }]
       : []),
     ...(cosmeticForms ?? []).flatMap((f) => [
-      { src: f.sprite_url, label: f.display_name },
-      { src: f.shiny_sprite_url, label: `Shiny ${f.display_name}` },
+      { src: f.sprite_url, label: f.display_name, cosmeticForm: f },
+      { src: f.shiny_sprite_url, label: `Shiny ${f.display_name}`, cosmeticForm: f },
     ]),
   ];
+  function selectVariant(i: number) {
+    setGalleryIndex(i);
+    setSelectedCosmeticForm(spriteVariants[i]?.cosmeticForm ?? null);
+  }
+  const displayPokemon = applyCosmeticForm(pokemon, selectedCosmeticForm);
+  const types = parseJsonArray(displayPokemon.types);
 
   return (
     <div className="flex flex-col h-full w-full">
@@ -352,7 +401,7 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
                 key={variant.label}
                 src={variant.src}
                 label={variant.label}
-                onClick={() => setGalleryIndex(i)}
+                onClick={() => selectVariant(i)}
               />
             ))}
           </div>
@@ -377,11 +426,11 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
 
         <Separator />
 
-        <ProfileSection pokemon={pokemon} types={types} cosmeticForms={cosmeticForms ?? []} />
+        <ProfileSection pokemon={displayPokemon} types={types} cosmeticForms={cosmeticForms ?? []} />
 
         <Separator />
 
-        <StatsSection pokemon={pokemon} />
+        <StatsSection pokemon={displayPokemon} />
 
         {!syncLoading && (
           <>
@@ -433,7 +482,7 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
       <SpriteGalleryDialog
         variants={spriteVariants}
         index={galleryIndex}
-        onIndexChange={setGalleryIndex}
+        onIndexChange={selectVariant}
         onClose={() => setGalleryIndex(null)}
       />
     </div>
@@ -451,6 +500,8 @@ function CenteredMessage({ text }: { text: string }) {
 interface SpriteVariant {
   src: string;
   label: string;
+  /** The Mega/Gmax cosmetic form this sprite belongs to, if any — null for every standard/shiny/gendered sprite. Drives displayPokemon's view-switch when selected. */
+  cosmeticForm: CosmeticForm | null;
 }
 
 function SpriteBlock({

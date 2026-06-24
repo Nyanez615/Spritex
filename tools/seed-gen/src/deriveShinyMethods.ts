@@ -107,6 +107,8 @@ export interface PokemonRow {
   ev_yield_special_attack: number;
   ev_yield_special_defense: number;
   ev_yield_speed: number;
+  has_mega_evolution: boolean;
+  has_gigantamax: boolean;
 }
 
 export interface CosmeticFormRow {
@@ -117,6 +119,24 @@ export interface CosmeticFormRow {
   sprite_url: string;
   shiny_sprite_url: string;
   mega_stone_item: string | null;
+  types: string;
+  height: number;
+  weight: number;
+  abilities: string;
+  stat_hp: number;
+  stat_attack: number;
+  stat_defense: number;
+  stat_special_attack: number;
+  stat_special_defense: number;
+  stat_speed: number;
+  stat_total: number;
+  base_experience: number;
+  ev_yield_hp: number;
+  ev_yield_attack: number;
+  ev_yield_defense: number;
+  ev_yield_special_attack: number;
+  ev_yield_special_defense: number;
+  ev_yield_speed: number;
 }
 
 export interface ShinyMethodRow {
@@ -229,6 +249,9 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
   const daRosterFacts = await readOutJson<DynamaxAdventureFact[]>("dynamax-adventure.json");
   const friendSafariFacts = await readOutJson<FriendSafariFact[]>("friend-safari.json");
   const finalEvolutionIds = new Set(await readOutJson<number[]>("final-evolutions.json"));
+  // Read here (not down by the cosmetic-forms pass-through below) so the
+  // pokemon-row loop can compute has_mega_evolution/has_gigantamax per row.
+  const cosmeticFormsRaw = await readOutJson<FetchedCosmeticForm[]>("cosmetic-forms-raw.json");
 
   const speciesByName = buildSpeciesNameIndex(species);
   const lockedByForm = resolveLockedGames(speciesByName, locks);
@@ -303,6 +326,15 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
     oddsByGame.get(row.game)!.push(row);
   }
 
+  const megaFormKeys = new Set(
+    cosmeticFormsRaw
+      .filter((f) => f.kind === "mega" || f.kind === "mega_x" || f.kind === "mega_y")
+      .map((f) => `${f.pokemonId}:${f.baseFormId}`),
+  );
+  const gmaxFormKeys = new Set(
+    cosmeticFormsRaw.filter((f) => f.kind === "gmax").map((f) => `${f.pokemonId}:${f.baseFormId}`),
+  );
+
   const pokemon: PokemonRow[] = [];
   const shinyMethods: ShinyMethodRow[] = [];
 
@@ -350,6 +382,8 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
         ev_yield_special_attack: variety.evYieldSpecialAttack,
         ev_yield_special_defense: variety.evYieldSpecialDefense,
         ev_yield_speed: variety.evYieldSpeed,
+        has_mega_evolution: megaFormKeys.has(`${s.pokemonId}:${variety.formId}`),
+        has_gigantamax: gmaxFormKeys.has(`${s.pokemonId}:${variety.formId}`),
       });
 
       const key = `${s.pokemonId}:${variety.formId}`;
@@ -416,7 +450,6 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
   // Cosmetic forms (Mega/Gigantamax) need no availability/odds derivation —
   // they aren't independently huntable (Mega reverts after battle, Gmax
   // doesn't change shininess) — just a column-shape pass-through.
-  const cosmeticFormsRaw = await readOutJson<FetchedCosmeticForm[]>("cosmetic-forms-raw.json");
   const cosmeticForms: CosmeticFormRow[] = cosmeticFormsRaw.map((f) => ({
     pokemon_id: f.pokemonId,
     form_id: f.baseFormId,
@@ -425,6 +458,24 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
     sprite_url: f.spriteUrl,
     shiny_sprite_url: f.shinySpriteUrl,
     mega_stone_item: f.megaStoneItem,
+    types: JSON.stringify(f.types),
+    height: f.height,
+    weight: f.weight,
+    abilities: JSON.stringify(f.abilities),
+    stat_hp: f.statHp,
+    stat_attack: f.statAttack,
+    stat_defense: f.statDefense,
+    stat_special_attack: f.statSpecialAttack,
+    stat_special_defense: f.statSpecialDefense,
+    stat_speed: f.statSpeed,
+    stat_total: f.statTotal,
+    base_experience: f.baseExperience,
+    ev_yield_hp: f.evYieldHp,
+    ev_yield_attack: f.evYieldAttack,
+    ev_yield_defense: f.evYieldDefense,
+    ev_yield_special_attack: f.evYieldSpecialAttack,
+    ev_yield_special_defense: f.evYieldSpecialDefense,
+    ev_yield_speed: f.evYieldSpeed,
   }));
 
   console.log(`deriveShinyMethods: ${pokemon.length} pokemon rows, ${shinyMethods.length} shiny_methods rows, ${cosmeticForms.length} cosmetic_forms rows`);

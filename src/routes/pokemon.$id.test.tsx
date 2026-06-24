@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { CollectionEntry, Pokemon, ShinyMethod } from "@/lib/tauri";
+import type { CollectionEntry, CosmeticForm, Pokemon, ShinyMethod } from "@/lib/tauri";
 import {
+  applyCosmeticForm,
   CollectionPanel,
   SpriteGalleryDialog,
   StatsSection,
@@ -47,12 +48,14 @@ const BULBASAUR: Pokemon = {
   ev_yield_special_attack: 1,
   ev_yield_special_defense: 0,
   ev_yield_speed: 0,
+  has_mega_evolution: false,
+  has_gigantamax: false,
 };
 
 describe("SpriteGalleryDialog", () => {
   const variants = [
-    { src: "standard.png", label: "Standard" },
-    { src: "shiny.png", label: "Shiny" },
+    { src: "standard.png", label: "Standard", cosmeticForm: null },
+    { src: "shiny.png", label: "Shiny", cosmeticForm: null },
   ];
 
   it("is closed when index is null", () => {
@@ -267,5 +270,53 @@ describe("CollectionPanel", () => {
       />,
     );
     expect(screen.getByText("Mark caught").closest("button")).toBeDisabled();
+  });
+});
+
+describe("applyCosmeticForm", () => {
+  const MEGA_VENUSAUR: CosmeticForm = {
+    id: 1,
+    pokemon_id: 3,
+    form_id: 0,
+    kind: "mega",
+    display_name: "Mega Venusaur",
+    sprite_url: "mega-venusaur.png",
+    shiny_sprite_url: "mega-venusaur-shiny.png",
+    mega_stone_item: "venusaurite",
+    types: '["grass","poison"]',
+    height: 24,
+    weight: 1555,
+    abilities: '[{"name":"thick-fat","isHidden":false}]',
+    stat_hp: 231,
+    stat_attack: 236,
+    stat_defense: 282,
+    stat_special_attack: 280,
+    stat_special_defense: 276,
+    stat_speed: 126,
+    stat_total: 1431,
+    base_experience: 64,
+    ev_yield_hp: 0,
+    ev_yield_attack: 0,
+    ev_yield_defense: 0,
+    ev_yield_special_attack: 1,
+    ev_yield_special_defense: 0,
+    ev_yield_speed: 0,
+  };
+
+  it("returns the base Pokémon unchanged when no cosmetic form is selected", () => {
+    expect(applyCosmeticForm(BULBASAUR, null)).toBe(BULBASAUR);
+  });
+
+  it("overrides only the fields that genuinely differ for a Mega/Gmax form, leaving everything else from the base Pokémon", () => {
+    const result = applyCosmeticForm(BULBASAUR, MEGA_VENUSAUR);
+    expect(result.stat_attack).toBe(236);
+    expect(result.stat_defense).toBe(282);
+    expect(result.abilities).toBe('[{"name":"thick-fat","isHidden":false}]');
+    // Unaffected — these never change for a cosmetic battle form.
+    expect(result.id).toBe(BULBASAUR.id);
+    expect(result.display_name).toBe(BULBASAUR.display_name);
+    expect(result.color).toBe(BULBASAUR.color);
+    expect(result.gender_rate).toBe(BULBASAUR.gender_rate);
+    expect(result.is_legendary).toBe(BULBASAUR.is_legendary);
   });
 });

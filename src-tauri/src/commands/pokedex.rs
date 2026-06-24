@@ -44,6 +44,8 @@ fn row_to_pokemon(row: &Row) -> rusqlite::Result<Pokemon> {
         ev_yield_special_attack: row.get("ev_yield_special_attack")?,
         ev_yield_special_defense: row.get("ev_yield_special_defense")?,
         ev_yield_speed: row.get("ev_yield_speed")?,
+        has_mega_evolution: row.get::<_, i32>("has_mega_evolution")? != 0,
+        has_gigantamax: row.get::<_, i32>("has_gigantamax")? != 0,
     })
 }
 

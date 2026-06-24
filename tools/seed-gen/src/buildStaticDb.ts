@@ -37,9 +37,9 @@ function insertPokemon(db: DatabaseSync, rows: PokemonRow[]): void {
       base_happiness, height, weight, abilities, stat_hp, stat_attack, stat_defense,
       stat_special_attack, stat_special_defense, stat_speed, stat_total, base_experience,
       ev_yield_hp, ev_yield_attack, ev_yield_defense, ev_yield_special_attack,
-      ev_yield_special_defense, ev_yield_speed
+      ev_yield_special_defense, ev_yield_speed, has_mega_evolution, has_gigantamax
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const r of rows) {
     stmt.run(
@@ -50,7 +50,7 @@ function insertPokemon(db: DatabaseSync, rows: PokemonRow[]): void {
       r.height, r.weight, r.abilities, r.stat_hp, r.stat_attack, r.stat_defense,
       r.stat_special_attack, r.stat_special_defense, r.stat_speed, r.stat_total, r.base_experience,
       r.ev_yield_hp, r.ev_yield_attack, r.ev_yield_defense, r.ev_yield_special_attack,
-      r.ev_yield_special_defense, r.ev_yield_speed
+      r.ev_yield_special_defense, r.ev_yield_speed, b(r.has_mega_evolution), b(r.has_gigantamax)
     );
   }
 }
@@ -70,11 +70,21 @@ function insertShinyMethods(db: DatabaseSync, rows: ShinyMethodRow[]): void {
 
 function insertCosmeticForms(db: DatabaseSync, rows: CosmeticFormRow[]): void {
   const stmt = db.prepare(`
-    INSERT INTO cosmetic_forms (pokemon_id, form_id, kind, display_name, sprite_url, shiny_sprite_url, mega_stone_item)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO cosmetic_forms (
+      pokemon_id, form_id, kind, display_name, sprite_url, shiny_sprite_url, mega_stone_item,
+      types, height, weight, abilities, stat_hp, stat_attack, stat_defense, stat_special_attack,
+      stat_special_defense, stat_speed, stat_total, base_experience, ev_yield_hp, ev_yield_attack,
+      ev_yield_defense, ev_yield_special_attack, ev_yield_special_defense, ev_yield_speed
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const r of rows) {
-    stmt.run(r.pokemon_id, r.form_id, r.kind, r.display_name, r.sprite_url, r.shiny_sprite_url, r.mega_stone_item);
+    stmt.run(
+      r.pokemon_id, r.form_id, r.kind, r.display_name, r.sprite_url, r.shiny_sprite_url, r.mega_stone_item,
+      r.types, r.height, r.weight, r.abilities, r.stat_hp, r.stat_attack, r.stat_defense, r.stat_special_attack,
+      r.stat_special_defense, r.stat_speed, r.stat_total, r.base_experience, r.ev_yield_hp, r.ev_yield_attack,
+      r.ev_yield_defense, r.ev_yield_special_attack, r.ev_yield_special_defense, r.ev_yield_speed
+    );
   }
 }
 

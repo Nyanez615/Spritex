@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { Pokemon } from "./tauri";
 import {
   filterPokemon,
+  GENERAL_SORT_KEYS,
   hasActivePokedexFilters,
+  SORT_KEYS,
   sortPokemonList,
+  STAT_SORT_KEYS,
   validatePokedexSearch,
   type PokedexSearch,
 } from "./pokedexFilter";
@@ -48,6 +51,8 @@ const BASE: Pokemon = {
   ev_yield_special_attack: 1,
   ev_yield_special_defense: 0,
   ev_yield_speed: 0,
+  has_mega_evolution: false,
+  has_gigantamax: false,
 };
 
 const IVYSAUR: Pokemon = {
@@ -169,5 +174,29 @@ describe("hasActivePokedexFilters", () => {
     expect(hasActivePokedexFilters(search({ types: ["fire"] }))).toBe(true);
     expect(hasActivePokedexFilters(search({ final: true }))).toBe(true);
     expect(hasActivePokedexFilters(search({ q: "char" }))).toBe(true);
+    expect(hasActivePokedexFilters(search({ hasMega: true }))).toBe(true);
+    expect(hasActivePokedexFilters(search({ hasGmax: true }))).toBe(true);
+  });
+});
+
+describe("hasMega/hasGmax filters", () => {
+  const MEGA_ONLY = { ...BASE, id: 200, has_mega_evolution: true, has_gigantamax: false };
+  const GMAX_ONLY = { ...BASE, id: 201, has_mega_evolution: false, has_gigantamax: true };
+  const ALL_WITH_COSMETIC = [BASE, MEGA_ONLY, GMAX_ONLY];
+
+  it("filters to only species with a Mega Evolution", () => {
+    const result = filterPokemon(ALL_WITH_COSMETIC, search({ hasMega: true }));
+    expect(result.map((p) => p.id)).toEqual([200]);
+  });
+
+  it("filters to only species with a Gigantamax form", () => {
+    const result = filterPokemon(ALL_WITH_COSMETIC, search({ hasGmax: true }));
+    expect(result.map((p) => p.id)).toEqual([201]);
+  });
+});
+
+describe("GENERAL_SORT_KEYS / STAT_SORT_KEYS", () => {
+  it("together cover every SortKey exactly once, with no gaps or overlap", () => {
+    expect([...GENERAL_SORT_KEYS, ...STAT_SORT_KEYS].sort()).toEqual([...SORT_KEYS].sort());
   });
 });

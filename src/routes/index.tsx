@@ -30,10 +30,11 @@ import { COLOR_ORDER, STAT_LABELS, TYPE_COLORS, TYPE_ORDER, humanize } from "@/l
 import {
   DEFAULT_SORT_DIRECTION,
   filterPokemon,
+  GENERAL_SORT_KEYS,
   hasActivePokedexFilters,
-  SORT_KEYS,
   SORT_LABELS,
   sortPokemonList,
+  STAT_SORT_KEYS,
   validatePokedexSearch,
   type GenderBucket,
   type PokedexSearch,
@@ -58,7 +59,7 @@ function PokedexGrid() {
   const {
     q = "", types = [], colors = [], gens = [], rarity = [], gender = [],
     eggGroups = [], shapes = [], growthRates = [], abilities = [], forms = [], evYieldStats = [],
-    final = false, sort = "dex", sortDir = DEFAULT_SORT_DIRECTION[sort],
+    final = false, hasMega = false, hasGmax = false, sort = "dex", sortDir = DEFAULT_SORT_DIRECTION[sort],
   } = rawSearch;
   // Memoized (not a fresh object literal every render) so `filtered` below —
   // which depends on this object's reference — only recomputes when a field
@@ -67,11 +68,11 @@ function PokedexGrid() {
   const search: Required<PokedexSearch> = useMemo(
     () => ({
       q, types, colors, gens, rarity, gender, eggGroups, shapes, growthRates, abilities, forms,
-      evYieldStats, final, sort, sortDir,
+      evYieldStats, final, hasMega, hasGmax, sort, sortDir,
     }),
     [
       q, types, colors, gens, rarity, gender, eggGroups, shapes, growthRates, abilities, forms,
-      evYieldStats, final, sort, sortDir,
+      evYieldStats, final, hasMega, hasGmax, sort, sortDir,
     ],
   );
 
@@ -211,7 +212,8 @@ function PokedexGrid() {
   function clearAllFilters() {
     updateSearch({
       q: "", types: [], colors: [], gens: [], rarity: [], gender: [],
-      eggGroups: [], shapes: [], growthRates: [], abilities: [], forms: [], evYieldStats: [], final: false,
+      eggGroups: [], shapes: [], growthRates: [], abilities: [], forms: [], evYieldStats: [],
+      final: false, hasMega: false, hasGmax: false,
     });
   }
 
@@ -315,7 +317,7 @@ function PokedexFilterBar({
 }) {
   const {
     q, types, colors, gens, rarity, gender, eggGroups, shapes, growthRates, abilities, forms,
-    evYieldStats, final, sort, sortDir,
+    evYieldStats, final, hasMega, hasGmax, sort, sortDir,
   } = search;
   const [abilitiesOpen, setAbilitiesOpen] = useState(false);
   const { isConfigured: isSyncConfigured, isLoading: syncLoading } = useSyncStatus();
@@ -424,12 +426,30 @@ function PokedexFilterBar({
               onChange={(e) => updateSearch({ q: e.target.value })}
               className="max-w-xs"
             />
-            <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
+            <Select
+              value={GENERAL_SORT_KEYS.includes(sort) ? sort : undefined}
+              onValueChange={(v) => setSort(v as SortKey)}
+            >
               <SelectTrigger size="sm">
-                <SelectValue />
+                <SelectValue placeholder="Sort: General" />
               </SelectTrigger>
               <SelectContent>
-                {SORT_KEYS.map((key) => (
+                {GENERAL_SORT_KEYS.map((key) => (
+                  <SelectItem key={key} value={key}>
+                    {SORT_LABELS[key]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={STAT_SORT_KEYS.includes(sort) ? sort : undefined}
+              onValueChange={(v) => setSort(v as SortKey)}
+            >
+              <SelectTrigger size="sm">
+                <SelectValue placeholder="Sort: Stats & Yield" />
+              </SelectTrigger>
+              <SelectContent>
+                {STAT_SORT_KEYS.map((key) => (
                   <SelectItem key={key} value={key}>
                     {SORT_LABELS[key]}
                   </SelectItem>
@@ -475,10 +495,20 @@ function PokedexFilterBar({
         groups={[generationGroup, rarityGroup, genderGroup, eggGroupGroup, growthRateGroup, formGroup, evYieldGroup]}
         leading={<RegionCaption>Classification</RegionCaption>}
         trailing={
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Switch size="sm" checked={final} onCheckedChange={(v) => updateSearch({ final: v })} />
-            Final evolution only
-          </label>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Switch size="sm" checked={final} onCheckedChange={(v) => updateSearch({ final: v })} />
+              Final evolution only
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Switch size="sm" checked={hasMega} onCheckedChange={(v) => updateSearch({ hasMega: v })} />
+              Has Mega Evolution
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Switch size="sm" checked={hasGmax} onCheckedChange={(v) => updateSearch({ hasGmax: v })} />
+              Has Gigantamax
+            </label>
+          </div>
         }
       />
       <FilterBar

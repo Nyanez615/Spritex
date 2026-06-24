@@ -153,6 +153,31 @@ export interface FetchedCosmeticForm {
   shinySpriteUrl: string;
   /** PokéAPI item slug, e.g. "venusaurite" — null for Gigantamax (no held item). */
   megaStoneItem: string | null;
+  /**
+   * Mega/Gmax forms can have genuinely different types/stats/abilities than
+   * the base form (e.g. Mega Charizard X is Fire/Dragon, not Fire/Flying;
+   * Mega Venusaur has a single fixed ability, Thick Fat) — these were
+   * already being fetched into fetchVarietyDetail's `shared` object but
+   * discarded before this field set existed.
+   */
+  types: string[];
+  height: number;
+  weight: number;
+  abilities: Array<{ name: string; isHidden: boolean }>;
+  statHp: number;
+  statAttack: number;
+  statDefense: number;
+  statSpecialAttack: number;
+  statSpecialDefense: number;
+  statSpeed: number;
+  statTotal: number;
+  baseExperience: number;
+  evYieldHp: number;
+  evYieldAttack: number;
+  evYieldDefense: number;
+  evYieldSpecialAttack: number;
+  evYieldSpecialDefense: number;
+  evYieldSpeed: number;
 }
 
 export interface FetchedSpecies {
@@ -302,6 +327,24 @@ async function fetchVarietyDetail(
           spriteUrl: bestSprite(pokemon.sprites, false),
           shinySpriteUrl: bestSprite(pokemon.sprites, true),
           megaStoneItem: kind === "gmax" ? null : megaStoneMap.get(`${speciesName}:${kind}`) ?? null,
+          types: shared.types,
+          height: shared.height,
+          weight: shared.weight,
+          abilities: shared.abilities,
+          statHp: shared.statHp,
+          statAttack: shared.statAttack,
+          statDefense: shared.statDefense,
+          statSpecialAttack: shared.statSpecialAttack,
+          statSpecialDefense: shared.statSpecialDefense,
+          statSpeed: shared.statSpeed,
+          statTotal: shared.statTotal,
+          baseExperience: shared.baseExperience,
+          evYieldHp: shared.evYieldHp,
+          evYieldAttack: shared.evYieldAttack,
+          evYieldDefense: shared.evYieldDefense,
+          evYieldSpecialAttack: shared.evYieldSpecialAttack,
+          evYieldSpecialDefense: shared.evYieldSpecialDefense,
+          evYieldSpeed: shared.evYieldSpeed,
         },
       };
     }

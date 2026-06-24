@@ -120,8 +120,9 @@ pub fn seed_static_db(rows: &[TestPokemonRow]) -> Connection {
                 growth_rate, egg_groups, capture_rate, base_happiness, height, weight, abilities,
                 stat_hp, stat_attack, stat_defense, stat_special_attack, stat_special_defense, stat_speed, stat_total,
                 base_experience, ev_yield_hp, ev_yield_attack, ev_yield_defense,
-                ev_yield_special_attack, ev_yield_special_defense, ev_yield_speed
-            ) VALUES (?1, ?2, ?3, ?4, ?5, '', '', '[]', 1, ?6, ?7, 0, 0, '', '', '[]', 45, 70, 10, 100, '[]', 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 0, 0, 0, 0)",
+                ev_yield_special_attack, ev_yield_special_defense, ev_yield_speed,
+                has_mega_evolution, has_gigantamax
+            ) VALUES (?1, ?2, ?3, ?4, ?5, '', '', '[]', 1, ?6, ?7, 0, 0, '', '', '[]', 45, 70, 10, 100, '[]', 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0)",
             rusqlite::params![
                 row.id, row.form_id, row.name, display_name, row.generation,
                 row.is_mythical as i32, row.is_legendary as i32,
@@ -186,8 +187,12 @@ pub fn seed_cosmetic_forms(conn: &Connection, rows: &[TestCosmeticFormRow]) {
     for row in rows {
         conn.execute(
             "INSERT INTO cosmetic_forms (
-                pokemon_id, form_id, kind, display_name, sprite_url, shiny_sprite_url, mega_stone_item
-            ) VALUES (?1, ?2, ?3, ?4, '', '', ?5)",
+                pokemon_id, form_id, kind, display_name, sprite_url, shiny_sprite_url, mega_stone_item,
+                types, height, weight, abilities,
+                stat_hp, stat_attack, stat_defense, stat_special_attack, stat_special_defense, stat_speed, stat_total,
+                base_experience, ev_yield_hp, ev_yield_attack, ev_yield_defense,
+                ev_yield_special_attack, ev_yield_special_defense, ev_yield_speed
+            ) VALUES (?1, ?2, ?3, ?4, '', '', ?5, '[]', 0, 0, '[]', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)",
             rusqlite::params![
                 row.pokemon_id, row.form_id, row.kind, row.display_name, row.mega_stone_item,
             ],
