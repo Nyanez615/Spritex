@@ -453,6 +453,18 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
     setGalleryIndex(i);
     setSelectedCosmeticForm(spriteVariants[i]?.cosmeticForm ?? null);
   }
+  // Standard (male/female/shiny) and cosmetic-form (Mega/Gmax) sprites
+  // render as two separately-wrapping rows rather than one shared flex-wrap
+  // — otherwise a species with many cosmetic forms (e.g. Venusaur's Mega +
+  // Gmax) pulls some of them up onto the standard row purely because there
+  // happened to be horizontal space left, an arbitrary split that has
+  // nothing to do with the two groups' actual distinction. Indices into
+  // `spriteVariants` are preserved (not re-numbered per group) since
+  // `trackVariant`/`galleryIndex`/the gallery dialog all key off the one
+  // flat array.
+  const indexedVariants = spriteVariants.map((variant, i) => ({ variant, i }));
+  const standardVariants = indexedVariants.filter(({ variant }) => variant.cosmeticForm === null);
+  const cosmeticVariants = indexedVariants.filter(({ variant }) => variant.cosmeticForm !== null);
   const displayPokemon = applyCosmeticForm(pokemon, selectedCosmeticForm);
   const types = parseJsonArray(displayPokemon.types);
 
@@ -480,7 +492,7 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
         <div className="flex gap-6">
           <div className="flex flex-col gap-2">
             <div className="flex gap-4 flex-wrap">
-              {spriteVariants.map((variant, i) => (
+              {standardVariants.map(({ variant, i }) => (
                 <SpriteBlock
                   key={variant.label}
                   src={variant.src}
@@ -490,6 +502,19 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
                 />
               ))}
             </div>
+            {cosmeticVariants.length > 0 && (
+              <div className="flex gap-4 flex-wrap">
+                {cosmeticVariants.map(({ variant, i }) => (
+                  <SpriteBlock
+                    key={variant.label}
+                    src={variant.src}
+                    label={variant.label}
+                    selected={i === galleryIndex}
+                    onClick={() => trackVariant(i)}
+                  />
+                ))}
+              </div>
+            )}
             <Button
               variant="ghost"
               size="sm"
