@@ -25,4 +25,12 @@ abilities: string,
  * Base stats at level 100 — max neutral IVs (31), 0 EVs, neutral nature.
  * Not raw PokéAPI base_stat values.
  */
-stat_hp: number, stat_attack: number, stat_defense: number, stat_special_attack: number, stat_special_defense: number, stat_speed: number, stat_total: number, base_experience: number, ev_yield_hp: number, ev_yield_attack: number, ev_yield_defense: number, ev_yield_special_attack: number, ev_yield_special_defense: number, ev_yield_speed: number, has_mega_evolution: boolean, has_gigantamax: boolean, };
+stat_hp: number, stat_attack: number, stat_defense: number, stat_special_attack: number, stat_special_defense: number, stat_speed: number, stat_total: number, base_experience: number, ev_yield_hp: number, ev_yield_attack: number, ev_yield_defense: number, ev_yield_special_attack: number, ev_yield_special_defense: number, ev_yield_speed: number, has_mega_evolution: boolean, has_gigantamax: boolean, has_gender_differences: boolean, 
+/**
+ * Steps to hatch from an egg (PokéAPI's raw hatch_counter in cycles * 255).
+ */
+hatch_steps: number, 
+/**
+ * Latest English Pokédex description PokéAPI has indexed — None only if no English entry exists at all.
+ */
+flavor_text: string | null, };

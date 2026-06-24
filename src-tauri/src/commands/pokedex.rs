@@ -3,7 +3,7 @@ use crate::models::{Pokemon, PokedexFilters};
 use rusqlite::{Connection, Row};
 use tauri::State;
 
-fn row_to_pokemon(row: &Row) -> rusqlite::Result<Pokemon> {
+pub(crate) fn row_to_pokemon(row: &Row) -> rusqlite::Result<Pokemon> {
     Ok(Pokemon {
         id: row.get("id")?,
         name: row.get("name")?,
@@ -46,6 +46,9 @@ fn row_to_pokemon(row: &Row) -> rusqlite::Result<Pokemon> {
         ev_yield_speed: row.get("ev_yield_speed")?,
         has_mega_evolution: row.get::<_, i32>("has_mega_evolution")? != 0,
         has_gigantamax: row.get::<_, i32>("has_gigantamax")? != 0,
+        has_gender_differences: row.get::<_, i32>("has_gender_differences")? != 0,
+        hatch_steps: row.get("hatch_steps")?,
+        flavor_text: row.get("flavor_text")?,
     })
 }
 

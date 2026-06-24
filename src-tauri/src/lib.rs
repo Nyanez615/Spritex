@@ -44,6 +44,7 @@ pub fn run() {
             commands::methods::get_methods_for_game,
             commands::methods::get_best_method,
             commands::cosmetic_forms::get_cosmetic_forms,
+            commands::evolution_chains::get_evolution_chain,
             commands::collection::get_collection_entry,
             commands::collection::update_status,
             commands::collection::mark_caught,

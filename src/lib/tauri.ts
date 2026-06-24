@@ -100,6 +100,12 @@ export const getCosmeticForms = (
 ): Promise<CosmeticForm[]> =>
   isTauri() ? invoke("get_cosmetic_forms", { pokemonId, formId }) : Promise.resolve([]);
 
+export const getEvolutionChain = (
+  pokemonId: number,
+  formId: number,
+): Promise<Pokemon[]> =>
+  isTauri() ? invoke("get_evolution_chain", { pokemonId, formId }) : Promise.resolve([]);
+
 // ── Collection ────────────────────────────────────────────────────────────────
 
 export const getCollectionEntry = (

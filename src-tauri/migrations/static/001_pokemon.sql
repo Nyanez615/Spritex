@@ -40,6 +40,9 @@ CREATE TABLE pokemon (
     ev_yield_speed            INTEGER NOT NULL,
     has_mega_evolution        INTEGER NOT NULL DEFAULT 0,
     has_gigantamax            INTEGER NOT NULL DEFAULT 0,
+    has_gender_differences    INTEGER NOT NULL DEFAULT 0,
+    hatch_steps               INTEGER NOT NULL DEFAULT 0,
+    flavor_text               TEXT,
     PRIMARY KEY (id, form_id)
 );
 

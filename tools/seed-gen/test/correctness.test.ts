@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readOutJson } from "../src/httpCache.js";
-import type { CosmeticFormRow, PokemonRow, ShinyMethodRow } from "../src/deriveShinyMethods.js";
+import type { CosmeticFormRow, EvolutionChainRow, PokemonRow, ShinyMethodRow } from "../src/deriveShinyMethods.js";
 
 interface AbilityFact {
   name: string;
@@ -22,6 +22,14 @@ async function methodsFor(
 ): Promise<ShinyMethodRow[]> {
   const all = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
   return all.filter((m) => m.pokemon_id === pokemonId && m.form_id === formId);
+}
+
+/** The full resolved evolution chain (every member, any stage) that (pokemonId, formId) belongs to. */
+async function chainFor(pokemonId: number, formId = 0): Promise<EvolutionChainRow[]> {
+  const all = await readOutJson<EvolutionChainRow[]>("evolution-chains.json");
+  const own = all.find((n) => n.pokemon_id === pokemonId && n.form_id === formId);
+  if (!own) return [];
+  return all.filter((n) => n.chain_id === own.chain_id);
 }
 
 test("Bulbasaur (#1) is SV-huntable at 1/512 via Mass Outbreak + Sparkling Power Lv.3 + Charm", async () => {
@@ -509,4 +517,62 @@ test("Base (Kantonian) Rattata (#19, form_id 0) keeps its genuine Gen 4 availabi
     rows.some((r) => r.game === "gen4_dp"),
     "expected a gen4_dp row for base Rattata",
   );
+});
+
+test("Galarian Meowth (#52)'s resolved evolution stage correctly points at Perrserker (#863), one stage past Galarian Meowth's own — Perrserker and Persian are flat, direct sibling children of Meowth in PokéAPI's raw chain tree (confirmed live: meowth.evolves_to has 2 entries, not 1), with the regional-form disambiguation carried entirely by each edge's base_form field, not by tree nesting depth; Kantonian Persian still appears in the same shared-chain_id family (by design — see the Yamask test below), just at its own correct stage, not Galarian Meowth's", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const galarianMeowth = pokemon.find((p) => p.id === 52 && p.form_name === "Galarian");
+  assert.ok(galarianMeowth, "expected a Galarian Meowth row in pokemon.json");
+  const chain = await chainFor(52, galarianMeowth!.form_id);
+  const perrserker = chain.find((n) => n.pokemon_id === 863);
+  const persian = chain.find((n) => n.pokemon_id === 53 && n.form_id === 0);
+  assert.ok(perrserker, "expected Perrserker in Galarian Meowth's resolved chain");
+  assert.ok(persian, "expected (Kantonian) Persian to still share the same chain_id");
+  assert.equal(perrserker!.chain_id, persian!.chain_id);
+  assert.equal(perrserker!.stage, chain.find((n) => n.pokemon_id === 52 && n.form_id === galarianMeowth!.form_id)!.stage + 1);
+});
+
+test("Kantonian and Alolan Meowth (#52) each resolve to their own respective Persian form (#53) at stage 1 — chainFor returns the whole shared-chain_id family regardless of query perspective (by design, so navigating from any one form surfaces every sibling form too), but each member's OWN stage must still reflect its real, form-specific evolution path", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const alolanMeowth = pokemon.find((p) => p.id === 52 && p.form_name === "Alolan");
+  assert.ok(alolanMeowth, "expected an Alolan Meowth row in pokemon.json");
+
+  const chain = await chainFor(52, 0);
+  const kantonianPersian = chain.find((n) => n.pokemon_id === 53 && n.form_id === 0);
+  const alolanPersian = chain.find((n) => n.pokemon_id === 53 && n.form_id !== 0);
+  assert.ok(kantonianPersian, "expected Kantonian Persian in the chain");
+  assert.ok(alolanPersian, "expected Alolan Persian (a non-base form_id) in the chain");
+  assert.equal(kantonianPersian!.stage, 1);
+  assert.equal(alolanPersian!.stage, 1);
+});
+
+test("Kantonian Persian (#53) and Perrserker (#863) have no further evolution — the walk correctly terminates leaves instead of over-extending", async () => {
+  const persianChain = await chainFor(53, 0);
+  const persianNode = persianChain.find((n) => n.pokemon_id === 53 && n.form_id === 0)!;
+  assert.ok(!persianChain.some((n) => n.stage > persianNode.stage), "expected no chain member at a stage beyond Persian's own");
+
+  const perrserkerChain = await chainFor(863, 0);
+  const perrserkerNode = perrserkerChain.find((n) => n.pokemon_id === 863)!;
+  assert.ok(!perrserkerChain.some((n) => n.stage > perrserkerNode.stage), "expected no chain member at a stage beyond Perrserker's own");
+});
+
+test("Galarian Yamask (#562)'s resolved evolution is Runerigus (#867) at stage 1, Kantonian Yamask's is Cofagrigus (#563) at stage 1 — both visible together under Yamask's one shared chain_id, each at its own correct form-specific stage", async () => {
+  const chain = await chainFor(562, 0);
+  const cofagrigus = chain.find((n) => n.pokemon_id === 563);
+  const runerigus = chain.find((n) => n.pokemon_id === 867);
+  assert.ok(cofagrigus, "expected Cofagrigus in the chain");
+  assert.ok(runerigus, "expected Runerigus in the chain");
+  assert.equal(cofagrigus!.stage, 1);
+  assert.equal(runerigus!.stage, 1);
+});
+
+test("Tauros (#128), with no evolution at all, still gets an evolution_chains row for each of its 4 forms, all stage 0 under one shared chain_id — regression test for a real bug: the edge-driven walk alone never discovers a regional/breed form whose species has zero evolution edges at all", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const tauros = pokemon.filter((p) => p.id === 128);
+  assert.equal(tauros.length, 4, "expected 4 tracked Tauros forms (base + 3 Paldean breeds)");
+  for (const t of tauros) {
+    const chain = await chainFor(128, t.form_id);
+    assert.equal(chain.length, 4, `expected all 4 Tauros forms visible from ${t.display_name}'s own chain view`);
+    assert.ok(chain.every((n) => n.stage === 0), `expected every Tauros form to be stage 0 from ${t.display_name}'s view`);
+  }
 });

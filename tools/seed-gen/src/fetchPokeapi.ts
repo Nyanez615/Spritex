@@ -51,11 +51,14 @@ interface PokeApiSpecies {
   id: number;
   name: string;
   gender_rate: number;
+  has_gender_differences: boolean;
   is_legendary: boolean;
   is_mythical: boolean;
   is_baby: boolean;
   generation: PokeApiNamedResource;
   egg_groups: PokeApiNamedResource[];
+  /** In cycles — 1 cycle = 255 steps (Bulbapedia convention). */
+  hatch_counter: number;
   names: PokeApiLocalizedName[];
   varieties: Array<{ is_default: boolean; pokemon: PokeApiNamedResource }>;
   color: PokeApiNamedResource;
@@ -64,6 +67,7 @@ interface PokeApiSpecies {
   capture_rate: number;
   base_happiness: number;
   evolution_chain: { url: string };
+  flavor_text_entries: Array<{ flavor_text: string; language: PokeApiNamedResource; version: PokeApiNamedResource }>;
 }
 
 interface PokeApiSprites {
@@ -101,6 +105,8 @@ export interface FetchedVariety {
   formId: number;
   formName: string | null;
   displayName: string;
+  /** Raw PokéAPI pokemon-resource name this variety was fetched from (e.g. "meowth-alola") — lets fetchEvolutionChains.ts resolve evolution_details' base_form/evolved_form references back to a (pokemonId, formId) pair. */
+  apiPokemonName: string;
   types: string[];
   spriteUrl: string;
   shinySpriteUrl: string;
@@ -186,10 +192,13 @@ export interface FetchedSpecies {
   displayName: string;
   generationNumber: number;
   genderRate: number;
+  hasGenderDifferences: boolean;
   isLegendary: boolean;
   isMythical: boolean;
   isBaby: boolean;
   isBreedable: boolean;
+  /** Steps to hatch from an egg — PokéAPI's raw hatch_counter (cycles) * 255. */
+  hatchSteps: number;
   color: string;
   /**
    * Null for a handful of legacy species PokéAPI never assigned a shape to.
@@ -210,7 +219,22 @@ export interface FetchedSpecies {
   captureRate: number;
   baseHappiness: number;
   evolutionChainUrl: string;
+  /** Latest English Pokédex description across every game PokéAPI has indexed — null only if no English entry exists at all. */
+  flavorText: string | null;
   varieties: FetchedVariety[];
+}
+
+/**
+ * PokéAPI's flavor_text_entries spans every game version PokéAPI has indexed,
+ * confirmed live to be in chronological array order — so the last English
+ * entry is always the most recently released game's text, no version-to-
+ * generation mapping needed. Strips the \n/\f line-wrap characters PokéAPI
+ * embeds for in-game text-box formatting.
+ */
+function pickFlavorText(entries: PokeApiSpecies["flavor_text_entries"]): string | null {
+  const english = entries.filter((e) => e.language.name === "en");
+  if (english.length === 0) return null;
+  return english[english.length - 1].flavor_text.replace(/[\n\f]/g, " ");
 }
 
 function englishName(names: PokeApiLocalizedName[], fallback: string): string {
@@ -357,6 +381,7 @@ async function fetchVarietyDetail(
         formId: formIndex,
         formName: adjective.trim(),
         displayName: formDisplayName,
+        apiPokemonName: variety.pokemon.name,
         ...shared,
       },
     };
@@ -367,6 +392,7 @@ async function fetchVarietyDetail(
       formId: 0,
       formName: null,
       displayName: fallbackDisplayName,
+      apiPokemonName: variety.pokemon.name,
       ...shared,
     },
   };
@@ -418,10 +444,12 @@ export async function fetchAllSpecies(): Promise<{ species: FetchedSpecies[]; co
         displayName,
         generationNumber: generationNumberFromName(species.generation.name),
         genderRate: species.gender_rate,
+        hasGenderDifferences: species.has_gender_differences,
         isLegendary: species.is_legendary,
         isMythical: species.is_mythical,
         isBaby: species.is_baby,
         isBreedable,
+        hatchSteps: species.hatch_counter * 255,
         color: species.color.name,
         shape: species.shape?.name ?? null,
         growthRate: species.growth_rate.name,
@@ -429,6 +457,7 @@ export async function fetchAllSpecies(): Promise<{ species: FetchedSpecies[]; co
         captureRate: species.capture_rate,
         baseHappiness: species.base_happiness,
         evolutionChainUrl: species.evolution_chain.url,
+        flavorText: pickFlavorText(species.flavor_text_entries),
         varieties,
       });
 

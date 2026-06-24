@@ -59,6 +59,7 @@
  */
 import { readOutJson, writeOutJson } from "./httpCache.js";
 import type { FetchedCosmeticForm, FetchedSpecies } from "./fetchPokeapi.js";
+import type { EvolutionChainNode } from "./fetchEvolutionChains.js";
 import type { AvailabilityOutput } from "./scrapeBulbapedia.js";
 import type { ShinyLockFact } from "./scrapeShinyLocks.js";
 import type { DynamaxAdventureFact } from "./scrapeDynamaxAdventure.js";
@@ -80,6 +81,7 @@ export interface PokemonRow {
   shiny_sprite_url_female: string | null;
   types: string;
   gender_rate: number;
+  has_gender_differences: boolean;
   is_mythical: boolean;
   is_legendary: boolean;
   is_baby: boolean;
@@ -90,6 +92,8 @@ export interface PokemonRow {
   egg_groups: string;
   capture_rate: number;
   base_happiness: number;
+  hatch_steps: number;
+  flavor_text: string | null;
   height: number;
   weight: number;
   abilities: string;
@@ -137,6 +141,13 @@ export interface CosmeticFormRow {
   ev_yield_special_attack: number;
   ev_yield_special_defense: number;
   ev_yield_speed: number;
+}
+
+export interface EvolutionChainRow {
+  pokemon_id: number;
+  form_id: number;
+  chain_id: number;
+  stage: number;
 }
 
 export interface ShinyMethodRow {
@@ -242,7 +253,7 @@ function applicableMethods(
   });
 }
 
-export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; shinyMethods: ShinyMethodRow[]; cosmeticForms: CosmeticFormRow[] }> {
+export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; shinyMethods: ShinyMethodRow[]; cosmeticForms: CosmeticFormRow[]; evolutionChains: EvolutionChainRow[] }> {
   const species = await readOutJson<FetchedSpecies[]>("species.json");
   const { citations, availability } = await readOutJson<AvailabilityOutput>("availability.json");
   const locks = await readOutJson<ShinyLockFact[]>("shiny-locks.json");
@@ -353,6 +364,7 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
         shiny_sprite_url_female: variety.shinySpriteUrlFemale,
         types: JSON.stringify(variety.types),
         gender_rate: s.genderRate,
+        has_gender_differences: s.hasGenderDifferences,
         is_mythical: s.isMythical,
         is_legendary: s.isLegendary,
         // Species-level facts — shared by every form/variety of this species.
@@ -364,6 +376,8 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
         egg_groups: JSON.stringify(s.eggGroups),
         capture_rate: s.captureRate,
         base_happiness: s.baseHappiness,
+        hatch_steps: s.hatchSteps,
+        flavor_text: s.flavorText,
         // Variety-level facts — these genuinely can differ by regional form.
         height: variety.height,
         weight: variety.weight,
@@ -478,11 +492,20 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
     ev_yield_speed: f.evYieldSpeed,
   }));
 
-  console.log(`deriveShinyMethods: ${pokemon.length} pokemon rows, ${shinyMethods.length} shiny_methods rows, ${cosmeticForms.length} cosmetic_forms rows`);
+  const evolutionChainNodes = await readOutJson<EvolutionChainNode[]>("evolution-chain-nodes.json");
+  const evolutionChains: EvolutionChainRow[] = evolutionChainNodes.map((n) => ({
+    pokemon_id: n.pokemonId,
+    form_id: n.formId,
+    chain_id: n.chainId,
+    stage: n.stage,
+  }));
+
+  console.log(`deriveShinyMethods: ${pokemon.length} pokemon rows, ${shinyMethods.length} shiny_methods rows, ${cosmeticForms.length} cosmetic_forms rows, ${evolutionChains.length} evolution_chains rows`);
   await writeOutJson("pokemon.json", pokemon);
   await writeOutJson("shiny-methods.json", shinyMethods);
   await writeOutJson("cosmetic-forms.json", cosmeticForms);
-  return { pokemon, shinyMethods, cosmeticForms };
+  await writeOutJson("evolution-chains.json", evolutionChains);
+  return { pokemon, shinyMethods, cosmeticForms, evolutionChains };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

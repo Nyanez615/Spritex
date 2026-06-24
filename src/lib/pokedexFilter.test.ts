@@ -53,6 +53,9 @@ const BASE: Pokemon = {
   ev_yield_speed: 0,
   has_mega_evolution: false,
   has_gigantamax: false,
+  has_gender_differences: false,
+  hatch_steps: 5120,
+  flavor_text: null,
 };
 
 const IVYSAUR: Pokemon = {

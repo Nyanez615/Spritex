@@ -10,7 +10,7 @@ import { mkdtemp, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readOutJson } from "./httpCache.js";
-import type { CosmeticFormRow, PokemonRow, ShinyMethodRow } from "./deriveShinyMethods.js";
+import type { CosmeticFormRow, EvolutionChainRow, PokemonRow, ShinyMethodRow } from "./deriveShinyMethods.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(HERE, "..", "..", "..");
@@ -22,7 +22,7 @@ function b(value: boolean): number {
 }
 
 async function applyMigrations(db: DatabaseSync): Promise<void> {
-  for (const file of ["001_pokemon.sql", "002_shiny_methods.sql", "003_cosmetic_forms.sql"]) {
+  for (const file of ["001_pokemon.sql", "002_shiny_methods.sql", "003_cosmetic_forms.sql", "004_evolution_chains.sql"]) {
     const sql = await readFile(path.join(MIGRATIONS_DIR, file), "utf8");
     db.exec(sql);
   }
@@ -37,9 +37,10 @@ function insertPokemon(db: DatabaseSync, rows: PokemonRow[]): void {
       base_happiness, height, weight, abilities, stat_hp, stat_attack, stat_defense,
       stat_special_attack, stat_special_defense, stat_speed, stat_total, base_experience,
       ev_yield_hp, ev_yield_attack, ev_yield_defense, ev_yield_special_attack,
-      ev_yield_special_defense, ev_yield_speed, has_mega_evolution, has_gigantamax
+      ev_yield_special_defense, ev_yield_speed, has_mega_evolution, has_gigantamax,
+      has_gender_differences, hatch_steps, flavor_text
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const r of rows) {
     stmt.run(
@@ -50,7 +51,8 @@ function insertPokemon(db: DatabaseSync, rows: PokemonRow[]): void {
       r.height, r.weight, r.abilities, r.stat_hp, r.stat_attack, r.stat_defense,
       r.stat_special_attack, r.stat_special_defense, r.stat_speed, r.stat_total, r.base_experience,
       r.ev_yield_hp, r.ev_yield_attack, r.ev_yield_defense, r.ev_yield_special_attack,
-      r.ev_yield_special_defense, r.ev_yield_speed, b(r.has_mega_evolution), b(r.has_gigantamax)
+      r.ev_yield_special_defense, r.ev_yield_speed, b(r.has_mega_evolution), b(r.has_gigantamax),
+      b(r.has_gender_differences), r.hatch_steps, r.flavor_text
     );
   }
 }
@@ -88,10 +90,21 @@ function insertCosmeticForms(db: DatabaseSync, rows: CosmeticFormRow[]): void {
   }
 }
 
+function insertEvolutionChains(db: DatabaseSync, rows: EvolutionChainRow[]): void {
+  const stmt = db.prepare(`
+    INSERT INTO evolution_chains (pokemon_id, form_id, chain_id, stage)
+    VALUES (?, ?, ?, ?)
+  `);
+  for (const r of rows) {
+    stmt.run(r.pokemon_id, r.form_id, r.chain_id, r.stage);
+  }
+}
+
 export async function runBuildStaticDb(): Promise<void> {
   const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
   const shinyMethods = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
   const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const evolutionChains = await readOutJson<EvolutionChainRow[]>("evolution-chains.json");
 
   // Built in a sibling dir of the real target (not os.tmpdir()) so the final
   // rename() is an atomic same-filesystem move, not a cross-volume copy.
@@ -106,6 +119,7 @@ export async function runBuildStaticDb(): Promise<void> {
       insertPokemon(db, pokemon);
       insertShinyMethods(db, shinyMethods);
       insertCosmeticForms(db, cosmeticForms);
+      insertEvolutionChains(db, evolutionChains);
       db.exec("COMMIT;");
     } finally {
       db.close();
@@ -115,7 +129,7 @@ export async function runBuildStaticDb(): Promise<void> {
     await rm(tmpDir, { recursive: true, force: true });
   }
 
-  console.log(`buildStaticDb: wrote ${pokemon.length} pokemon + ${shinyMethods.length} shiny_methods + ${cosmeticForms.length} cosmetic_forms rows to ${path.relative(REPO_ROOT, TARGET_DB)}`);
+  console.log(`buildStaticDb: wrote ${pokemon.length} pokemon + ${shinyMethods.length} shiny_methods + ${cosmeticForms.length} cosmetic_forms + ${evolutionChains.length} evolution_chains rows to ${path.relative(REPO_ROOT, TARGET_DB)}`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

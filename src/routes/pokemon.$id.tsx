@@ -85,6 +85,7 @@ import {
 import {
   getCollectionEntry,
   getCosmeticForms,
+  getEvolutionChain,
   getMethodsForPokemon,
   getPokemonDetail,
   incrementCounter,
@@ -160,6 +161,77 @@ function PokemonNavButton({
         <Icon className="size-4" />
       </Link>
     </Button>
+  );
+}
+
+/**
+ * Every species/form sharing the current Pokémon's evolution chain_id — the
+ * whole family, not just what's directly reachable from the current form
+ * (e.g. Galarian Meowth's chain also surfaces Kantonian/Alolan Meowth and
+ * Persian, not only its own Perrserker evolution), since the goal is quick
+ * navigation between related forms, not a strict evolutionary path. Hidden
+ * entirely when the chain has nothing but the current species (no evolution
+ * line at all).
+ */
+function EvolutionLineNav({
+  chain,
+  current,
+  searchContext,
+}: {
+  chain: Pokemon[];
+  current: Pokemon;
+  searchContext: Required<PokedexSearch>;
+}) {
+  return (
+    <div>
+      <h2 className="text-sm font-semibold text-foreground mb-3">
+        Evolution Line
+      </h2>
+      <div className="flex gap-2 flex-wrap">
+        {chain.map((member) => {
+          const isCurrent =
+            member.id === current.id && member.form_id === current.form_id;
+          if (isCurrent) {
+            return (
+              <Badge
+                key={`${member.id}-${member.form_id}`}
+                variant="outline"
+                className="flex items-center gap-1.5 px-2 py-1 text-sm font-normal"
+              >
+                <img
+                  src={member.sprite_url}
+                  alt={member.display_name}
+                  className="size-6"
+                />
+                {member.display_name}
+              </Badge>
+            );
+          }
+          return (
+            <Button
+              key={`${member.id}-${member.form_id}`}
+              asChild
+              variant="outline"
+              size="sm"
+            >
+              <Link
+                to="/pokemon/$id"
+                params={{ id: String(member.id) }}
+                search={{ ...searchContext, form: member.form_id }}
+                className="flex items-center gap-1.5"
+              >
+                <img
+                  src={member.sprite_url}
+                  alt={member.display_name}
+                  className="size-6"
+                />
+                {member.display_name}
+              </Link>
+            </Button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -282,6 +354,11 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
   const { data: cosmeticForms } = useQuery({
     queryKey: queryKeys.cosmeticForms(pokemonId, formId),
     queryFn: () => getCosmeticForms(pokemonId, formId),
+  });
+
+  const { data: evolutionChain } = useQuery({
+    queryKey: queryKeys.evolutionChain(pokemonId, formId),
+    queryFn: () => getEvolutionChain(pokemonId, formId),
   });
 
   const { isConfigured: isSyncConfigured, isLoading: syncLoading } =
@@ -445,6 +522,23 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
             )}
           </div>
         </div>
+
+        {pokemon.flavor_text && (
+          <p className="text-sm italic text-muted-foreground">
+            {pokemon.flavor_text}
+          </p>
+        )}
+
+        {evolutionChain && evolutionChain.length > 1 && (
+          <>
+            <Separator />
+            <EvolutionLineNav
+              chain={evolutionChain}
+              current={pokemon}
+              searchContext={searchContext}
+            />
+          </>
+        )}
 
         <Separator />
 
@@ -800,7 +894,12 @@ function ProfileSection({
 
         {/* Breeding */}
         <ProfileField label="Gender">
-          <GenderRatioBar rate={pokemon.gender_rate} />
+          <span className="flex items-center gap-1.5">
+            <GenderRatioBar rate={pokemon.gender_rate} />
+            {pokemon.has_gender_differences && (
+              <span className="text-xs text-muted-foreground">(visual differences)</span>
+            )}
+          </span>
         </ProfileField>
         <ProfileField label="Egg Groups">
           {eggGroups.length > 0 ? eggGroups.map(humanize).join(", ") : "—"}
@@ -811,6 +910,9 @@ function ProfileSection({
         <ProfileField label="Capture Rate">{pokemon.capture_rate}</ProfileField>
         <ProfileField label="Base Happiness">
           {pokemon.base_happiness}
+        </ProfileField>
+        <ProfileField label="Hatch Time">
+          {pokemon.hatch_steps} steps ({pokemon.hatch_steps / 255} cycles)
         </ProfileField>
 
         {/* Battle */}

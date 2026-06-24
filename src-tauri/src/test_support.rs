@@ -110,6 +110,8 @@ pub fn seed_static_db(rows: &[TestPokemonRow]) -> Connection {
         .expect("apply 002_shiny_methods.sql");
     conn.execute_batch(include_str!("../migrations/static/003_cosmetic_forms.sql"))
         .expect("apply 003_cosmetic_forms.sql");
+    conn.execute_batch(include_str!("../migrations/static/004_evolution_chains.sql"))
+        .expect("apply 004_evolution_chains.sql");
 
     for row in rows {
         let display_name = if row.display_name.is_empty() { row.name.clone() } else { row.display_name.clone() };
@@ -121,8 +123,8 @@ pub fn seed_static_db(rows: &[TestPokemonRow]) -> Connection {
                 stat_hp, stat_attack, stat_defense, stat_special_attack, stat_special_defense, stat_speed, stat_total,
                 base_experience, ev_yield_hp, ev_yield_attack, ev_yield_defense,
                 ev_yield_special_attack, ev_yield_special_defense, ev_yield_speed,
-                has_mega_evolution, has_gigantamax
-            ) VALUES (?1, ?2, ?3, ?4, ?5, '', '', '[]', 1, ?6, ?7, 0, 0, '', '', '[]', 45, 70, 10, 100, '[]', 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0)",
+                has_mega_evolution, has_gigantamax, has_gender_differences, hatch_steps, flavor_text
+            ) VALUES (?1, ?2, ?3, ?4, ?5, '', '', '[]', 1, ?6, ?7, 0, 0, '', '', '[]', 45, 70, 10, 100, '[]', 1, 1, 1, 1, 1, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL)",
             rusqlite::params![
                 row.id, row.form_id, row.name, display_name, row.generation,
                 row.is_mythical as i32, row.is_legendary as i32,
@@ -198,6 +200,24 @@ pub fn seed_cosmetic_forms(conn: &Connection, rows: &[TestCosmeticFormRow]) {
             ],
         )
         .expect("insert test cosmetic_forms row");
+    }
+}
+
+#[derive(Default)]
+pub struct TestEvolutionChainRow {
+    pub pokemon_id: i32,
+    pub form_id: i32,
+    pub chain_id: i32,
+    pub stage: i32,
+}
+
+pub fn seed_evolution_chains(conn: &Connection, rows: &[TestEvolutionChainRow]) {
+    for row in rows {
+        conn.execute(
+            "INSERT INTO evolution_chains (pokemon_id, form_id, chain_id, stage) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![row.pokemon_id, row.form_id, row.chain_id, row.stage],
+        )
+        .expect("insert test evolution_chains row");
     }
 }
 

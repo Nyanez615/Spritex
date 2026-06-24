@@ -302,6 +302,11 @@ pub struct Pokemon {
     pub ev_yield_speed: i32,
     pub has_mega_evolution: bool,
     pub has_gigantamax: bool,
+    pub has_gender_differences: bool,
+    /// Steps to hatch from an egg (PokéAPI's raw hatch_counter in cycles * 255).
+    pub hatch_steps: i32,
+    /// Latest English Pokédex description PokéAPI has indexed — None only if no English entry exists at all.
+    pub flavor_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
