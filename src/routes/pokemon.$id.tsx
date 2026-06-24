@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  Maximize2,
   RotateCcw,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -330,8 +331,13 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
     onSuccess: onMutationSuccess,
   });
 
-  const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
-  // Set when the selected gallery sprite is a Mega/Gmax cosmetic form — drives
+  // Always holds a real index (the currently tracked/selected sprite) — distinct
+  // from galleryOpen, which solely controls whether the fullscreen dialog is
+  // showing. Defaults to 0 (the standard sprite) so the selected-thumbnail ring
+  // reflects what's actually displayed in Profile/Stats from first render.
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  // Set when the tracked sprite is a Mega/Gmax cosmetic form — drives
   // displayPokemon below, which overrides only the fields that genuinely
   // differ for that form (types/stats/abilities/etc.), so the Profile/Stats
   // sections switch to show it without navigating anywhere. Null for every
@@ -366,7 +372,7 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
       { src: f.shiny_sprite_url, label: `Shiny ${f.display_name}`, cosmeticForm: f },
     ]),
   ];
-  function selectVariant(i: number) {
+  function trackVariant(i: number) {
     setGalleryIndex(i);
     setSelectedCosmeticForm(spriteVariants[i]?.cosmeticForm ?? null);
   }
@@ -395,15 +401,26 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
       </div>
       <div className="flex-1 overflow-auto p-6 space-y-6">
         <div className="flex gap-6">
-          <div className="flex gap-4 flex-wrap">
-            {spriteVariants.map((variant, i) => (
-              <SpriteBlock
-                key={variant.label}
-                src={variant.src}
-                label={variant.label}
-                onClick={() => selectVariant(i)}
-              />
-            ))}
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-4 flex-wrap">
+              {spriteVariants.map((variant, i) => (
+                <SpriteBlock
+                  key={variant.label}
+                  src={variant.src}
+                  label={variant.label}
+                  selected={i === galleryIndex}
+                  onClick={() => trackVariant(i)}
+                />
+              ))}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="self-start"
+              onClick={() => setGalleryOpen(true)}
+            >
+              <Maximize2 className="size-3.5" /> Expand sprites
+            </Button>
           </div>
           <div className="flex flex-col gap-2 justify-center">
             <div className="flex gap-1.5 flex-wrap">
@@ -421,6 +438,11 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
             <p className="text-sm text-muted-foreground">
               Generation {pokemon.generation}
             </p>
+            {selectedCosmeticForm && (
+              <p className="text-sm text-muted-foreground">
+                Showing: {selectedCosmeticForm.display_name}
+              </p>
+            )}
           </div>
         </div>
 
@@ -481,9 +503,9 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
       </div>
       <SpriteGalleryDialog
         variants={spriteVariants}
-        index={galleryIndex}
-        onIndexChange={selectVariant}
-        onClose={() => setGalleryIndex(null)}
+        index={galleryOpen ? galleryIndex : null}
+        onIndexChange={trackVariant}
+        onClose={() => setGalleryOpen(false)}
       />
     </div>
   );
@@ -507,10 +529,12 @@ interface SpriteVariant {
 function SpriteBlock({
   src,
   label,
+  selected,
   onClick,
 }: {
   src: string;
   label: string;
+  selected: boolean;
   onClick: () => void;
 }) {
   return (
@@ -519,8 +543,15 @@ function SpriteBlock({
       onClick={onClick}
       className="flex flex-col items-center gap-1 group"
     >
-      <div className="rounded-lg border border-border bg-muted/30 p-3 transition-colors group-hover:border-primary/50">
-        <img src={src} alt={label} className="h-20 w-20" />
+      <div
+        className={cn(
+          "rounded-lg border bg-muted/30 p-4 transition-colors",
+          selected
+            ? "border-primary ring-2 ring-primary/40"
+            : "border-border group-hover:border-primary/50",
+        )}
+      >
+        <img src={src} alt={label} className="h-28 w-28" />
       </div>
       <span className="text-xs text-muted-foreground">{label}</span>
     </button>

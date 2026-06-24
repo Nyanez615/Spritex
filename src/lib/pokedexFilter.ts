@@ -32,10 +32,11 @@ export const GENERAL_SORT_KEYS: readonly SortKey[] = [
   "dex", "name", "generation", "height", "weight", "capture_rate", "base_happiness",
 ];
 export const STAT_SORT_KEYS: readonly SortKey[] = [
-  "stat_hp", "stat_attack", "stat_defense", "stat_special_attack", "stat_special_defense",
-  "stat_speed", "stat_total", "base_experience", "ev_total",
-  "ev_yield_hp", "ev_yield_attack", "ev_yield_defense", "ev_yield_special_attack",
-  "ev_yield_special_defense", "ev_yield_speed",
+  "stat_total", "stat_hp", "stat_attack", "stat_defense", "stat_special_attack",
+  "stat_special_defense", "stat_speed",
+  "ev_total", "ev_yield_hp", "ev_yield_attack", "ev_yield_defense",
+  "ev_yield_special_attack", "ev_yield_special_defense", "ev_yield_speed",
+  "base_experience",
 ];
 
 export function evYieldFor(p: Pokemon, key: StatKey): number {
