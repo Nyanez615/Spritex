@@ -20,17 +20,26 @@ import { fetchMegaStoneMap } from "./megaStones.js";
 const POKEAPI_BASE = "https://pokeapi.co/api/v2";
 
 /**
- * Regional-form adjectives, used as an English-name *prefix* match rather
- * than matching PokéAPI's raw `form_name` slug. Verified live: real regional
- * forms' English names all start with "<Adjective> " — "Alolan Raichu",
- * "Galarian Meowth", "Paldean Tauros (Combat Breed)" — while cosmetic forms
- * that also reference a region never use the adjective form: "Alola Cap
- * Pikachu", "High Plains Vivillon". An exact `form_name` match (the
- * previous approach) misses Paldean Tauros's 3 breeds, whose `form_name` is
- * `"paldea-combat-breed"` etc., not exactly `"paldea"`; this prefix check
- * catches them while still excluding the cap/pattern cosmetics.
+ * Regional-form adjectives, matched as a standalone word anywhere in the
+ * English name rather than matching PokéAPI's raw `form_name` slug. Most
+ * real regional forms' English names start with "<Adjective> " — "Alolan
+ * Raichu", "Galarian Meowth", "Paldean Tauros (Combat Breed)" — while
+ * cosmetic forms that also reference a region never use the adjective form:
+ * "Alola Cap Pikachu", "High Plains Vivillon". An exact `form_name` match
+ * (an even earlier approach) misses Paldean Tauros's 3 breeds, whose
+ * `form_name` is `"paldea-combat-breed"` etc., not exactly `"paldea"`.
+ *
+ * A strict-*prefix* check (an earlier version of this same check) in turn
+ * misses Darmanitan: its Galarian Standard-mode variety's English name is
+ * "Standard Galarian Darmanitan" — Galarian Darmanitan's own battle-mode
+ * split (Standard/Zen, layered on top of the regional-form name) pushes the
+ * adjective to the *second* word, not the first — confirmed missing from
+ * `pokemon` entirely until exhaustively re-auditing every one of this
+ * dataset's 325 non-default varieties (not just the originally-checked
+ * regional-form species) turned up this and one other category, "Totem"
+ * encounters (see the Totem check below), both missed by a strict prefix.
  */
-const REGIONAL_ADJECTIVES = ["Alolan ", "Galarian ", "Hisuian ", "Paldean "];
+const REGIONAL_ADJECTIVES = ["Alolan", "Galarian", "Hisuian", "Paldean"];
 
 interface PokeApiNamedResource {
   name: string;
@@ -373,13 +382,22 @@ async function fetchVarietyDetail(
       };
     }
     const formDisplayName = englishName(form.names, pokemon.name);
-    const adjective = REGIONAL_ADJECTIVES.find((prefix) => formDisplayName.startsWith(prefix));
+    // "Totem Alolan Marowak"/"Totem Alolan Raticate" are a real PokéAPI
+    // variety, not battle_only/is_mega per PokéAPI's own flags, but
+    // confirmed live (Bulbapedia's "Totem Pokémon" article) that the boosted
+    // Totem state itself can never be caught or owned — SM/USUM's "island
+    // challenge rules" make it a fixed, uncatchable trial encounter, the
+    // game-mechanic equivalent of battle-only despite PokéAPI not flagging
+    // it that way. Exclude explicitly, before the regional-adjective check
+    // below (which "Totem Alolan Marowak" would otherwise also pass).
+    if (/\bTotem\b/.test(formDisplayName)) return {};
+    const adjective = REGIONAL_ADJECTIVES.find((adj) => new RegExp(`\\b${adj}\\b`).test(formDisplayName));
     if (!adjective) return {}; // cosmetic-only variant (pattern/cap/season/etc.) — not modeled
 
     return {
       variety: {
         formId: formIndex,
-        formName: adjective.trim(),
+        formName: adjective,
         displayName: formDisplayName,
         apiPokemonName: variety.pokemon.name,
         ...shared,

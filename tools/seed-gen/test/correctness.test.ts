@@ -576,3 +576,25 @@ test("Tauros (#128), with no evolution at all, still gets an evolution_chains ro
     assert.ok(chain.every((n) => n.stage === 0), `expected every Tauros form to be stage 0 from ${t.display_name}'s view`);
   }
 });
+
+test("Galarian Darmanitan (#555) is tracked as its own Ice-type regional form, with only its real SwSh-era availability — not Kantonian Darmanitan's pre-Gen-8 rows. Regression test for a real reported bug: its English form name is \"Standard Galarian Darmanitan\" (the regional adjective isn't the first word, because Darmanitan's own Standard/Zen battle-mode split is layered on top), which a strict English-name-prefix check missed entirely", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const galarianDarmanitan = pokemon.find((p) => p.id === 555 && p.form_name === "Galarian");
+  assert.ok(galarianDarmanitan, "expected a Galarian Darmanitan row in pokemon.json");
+  assert.deepEqual(JSON.parse(galarianDarmanitan!.types), ["ice"]);
+
+  const rows = await methodsFor(555, galarianDarmanitan!.form_id);
+  assert.ok(rows.length > 0, "expected at least one shiny_methods row for Galarian Darmanitan");
+  assert.ok(rows.every((r) => r.game === "swsh"), "expected Galarian Darmanitan's availability to be SwSh-only");
+
+  const baseRows = await methodsFor(555, 0);
+  assert.ok(baseRows.some((r) => r.game === "gen5_bw"), "expected base Darmanitan to keep its own real pre-Gen-8 availability");
+});
+
+test('"Totem" PokéAPI varieties (Totem Alolan Marowak, Totem Alolan Raticate) stay excluded, not promoted into pokemon rows by the broadened regional-adjective match above — confirmed via Bulbapedia\'s "Totem Pokémon" article that the boosted Totem state can never be caught/owned ("due to the island challenge rules"), the practical equivalent of battle-only despite PokéAPI not flagging it that way', async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const marowak = pokemon.filter((p) => p.id === 105);
+  const raticate = pokemon.filter((p) => p.id === 20);
+  assert.equal(marowak.length, 2, "expected only base + Alolan Marowak, no Totem row");
+  assert.equal(raticate.length, 2, "expected only base + Alolan Raticate, no Totem row");
+});
