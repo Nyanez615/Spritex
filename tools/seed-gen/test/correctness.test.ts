@@ -582,6 +582,11 @@ test("Galarian Darmanitan (#555) is tracked as its own Ice-type regional form, w
   const galarianDarmanitan = pokemon.find((p) => p.id === 555 && p.form_name === "Galarian");
   assert.ok(galarianDarmanitan, "expected a Galarian Darmanitan row in pokemon.json");
   assert.deepEqual(JSON.parse(galarianDarmanitan!.types), ["ice"]);
+  assert.equal(
+    galarianDarmanitan!.display_name,
+    "Galarian Darmanitan",
+    "expected the redundant 'Standard ' qualifier stripped — there's nothing left to disambiguate against since Zen Mode is never tracked",
+  );
 
   const rows = await methodsFor(555, galarianDarmanitan!.form_id);
   assert.ok(rows.length > 0, "expected at least one shiny_methods row for Galarian Darmanitan");

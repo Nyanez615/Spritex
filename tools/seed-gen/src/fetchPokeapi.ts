@@ -381,7 +381,18 @@ async function fetchVarietyDetail(
         },
       };
     }
-    const formDisplayName = englishName(form.names, pokemon.name);
+    // Strip a leading "Standard " qualifier — PokéAPI's English name for
+    // Darmanitan's non-Zen forms (Kantonian and Galarian both) is "Standard
+    // <Adjective> Darmanitan"/"Standard Darmanitan", disambiguating against
+    // the Zen-Mode variety. This app never tracks Zen Mode at all (a
+    // battle-only transformation, the same modeling reasoning that already
+    // excludes Mega/Gmax from `pokemon` rows), so for the one tracked
+    // variety here there's nothing left to disambiguate against — "Standard
+    // Galarian Darmanitan" should just read "Galarian Darmanitan", matching
+    // every other regional form's "<Adjective> <Species>" naming. Confirmed
+    // via a direct DB query that Darmanitan is the only species in this
+    // dataset where this qualifier appears at all.
+    const formDisplayName = englishName(form.names, pokemon.name).replace(/^Standard /, "");
     // "Totem Alolan Marowak"/"Totem Alolan Raticate" are a real PokéAPI
     // variety, not battle_only/is_mega per PokéAPI's own flags, but
     // confirmed live (Bulbapedia's "Totem Pokémon" article) that the boosted
