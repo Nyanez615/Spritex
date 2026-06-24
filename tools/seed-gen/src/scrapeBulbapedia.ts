@@ -303,12 +303,22 @@ function resolveFormIdsAndWildness(
   }
 
   if (!sawAnnotation) {
+    // An area cell with zero bold form annotations always describes exactly
+    // one form, never "every variety of this species" — confirmed directly
+    // against Bulbapedia's own convention (Rattata/Sandshrew/Meowth/Growlithe
+    // wikitext: every pre-regional-form generation entry is unannotated and
+    // describes the base/Kantonian form only; the instant a cell needs to
+    // distinguish two forms, both get bolded). Defaulting to every variety
+    // here previously gave regional forms availability in games that predate
+    // them by multiple generations (e.g. Alolan Rattata showing up in
+    // Diamond/Pearl). Same default as the `sawUnannotatedContent` partial
+    // case below (formId 0), just for the all-unannotated case.
     const wild = isWildArea(areaText);
     const chainable = isChainableArea(areaText);
     return {
-      formIds: varieties.map((v) => v.formId),
-      wildByFormId: new Map(varieties.map((v) => [v.formId, wild])),
-      chainableByFormId: new Map(varieties.map((v) => [v.formId, chainable])),
+      formIds: [0],
+      wildByFormId: new Map([[0, wild]]),
+      chainableByFormId: new Map([[0, chainable]]),
     };
   }
   if (sawUnannotatedContent) {

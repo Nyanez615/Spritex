@@ -478,3 +478,35 @@ test("Turtwig (#387) in BDSP: a wild row exists (its Grand Underground Hideaway 
     "expected no bdsp/chain_radar row for Turtwig (Pokéradar doesn't work in the Grand Underground)",
   );
 });
+
+test("Alolan Rattata (#19) has no Gen 4 (Diamond/Pearl/Platinum/HeartGold-SoulSilver) shiny_methods rows — Alolan forms didn't exist until Gen 7, so an unannotated pre-Gen-7 area cell must never resolve to a regional form. Regression test for a real reported bug: the resolveFormIdsAndWildness fallback used to apply every unannotated area cell to every variety of the species, including regional forms that postdate it by multiple generations", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const alolan = pokemon.find((p) => p.id === 19 && p.form_name === "Alolan");
+  assert.ok(alolan, "expected an Alolan Rattata row in pokemon.json");
+  const rows = await methodsFor(19, alolan!.form_id);
+  for (const game of ["gen4_dp", "gen4_pt", "gen4_hgss"]) {
+    assert.ok(
+      rows.every((r) => r.game !== game),
+      `expected no ${game} row for Alolan Rattata (didn't exist yet)`,
+    );
+  }
+});
+
+test("Alolan Rattata (#19) still has its real Gen 7 (Sun/Moon) availability — the regional-form fix must not strip genuine availability, only the impossible pre-Gen-7 rows", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const alolan = pokemon.find((p) => p.id === 19 && p.form_name === "Alolan");
+  assert.ok(alolan, "expected an Alolan Rattata row in pokemon.json");
+  const rows = await methodsFor(19, alolan!.form_id);
+  assert.ok(
+    rows.some((r) => r.game === "gen7_sm"),
+    "expected a gen7_sm row for Alolan Rattata",
+  );
+});
+
+test("Base (Kantonian) Rattata (#19, form_id 0) keeps its genuine Gen 4 availability — confirms the regional-form fix didn't over-correct and strip the base form's own real rows", async () => {
+  const rows = await methodsFor(19, 0);
+  assert.ok(
+    rows.some((r) => r.game === "gen4_dp"),
+    "expected a gen4_dp row for base Rattata",
+  );
+});

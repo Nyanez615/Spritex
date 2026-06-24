@@ -737,9 +737,9 @@ function ProfileSection({
             <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
               {abilities.map((a, i) => (
                 <span key={a.name} className="inline-flex items-center gap-1">
-                  {i > 0 && <span>,</span>}
                   <span className={a.isHidden ? "italic text-primary" : undefined}>
                     {humanize(a.name)}
+                    {i < abilities.length - 1 ? "," : ""}
                   </span>
                   {a.isHidden && (
                     <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
