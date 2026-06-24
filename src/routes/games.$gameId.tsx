@@ -3,7 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
 import { GenerationBadge } from "@/components/GenerationBadge";
-import { Badge } from "@/components/ui/badge";
+import { RecommendedBadge } from "@/components/RecommendedBadge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
@@ -92,7 +92,7 @@ function GameBrowseView() {
                       <span className="font-medium text-foreground truncate">
                         {p?.display_name ?? `#${m.pokemon_id}`}
                       </span>
-                      {m.is_best_method && <Badge>Best</Badge>}
+                      {m.is_best_method && <RecommendedBadge />}
                     </div>
                     <p className="text-xs text-muted-foreground">{methodLabel(m)}</p>
                   </div>

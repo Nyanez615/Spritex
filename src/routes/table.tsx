@@ -12,6 +12,7 @@ import {
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink } from "lucide-react";
 import { GenerationBadge } from "@/components/GenerationBadge";
+import { RecommendedBadge } from "@/components/RecommendedBadge";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -101,9 +102,9 @@ function MethodsTable() {
       },
       {
         accessorKey: "is_best_method",
-        header: "Best",
+        header: "Recommended",
         enableSorting: false,
-        cell: ({ getValue }) => (getValue<boolean>() ? <Badge>Best</Badge> : null),
+        cell: ({ getValue }) => (getValue<boolean>() ? <RecommendedBadge /> : null),
       },
       {
         accessorKey: "requires_transfer",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { COLOR_ORDER, TYPE_ORDER } from "@/lib/labels";
-import { DEFAULT_SORT_DIRECTION, genderBucket, rawFromHumanized, SORT_KEYS, validatePokedexSearch } from "./index";
+import { DEFAULT_SORT_DIRECTION, genderBucket, SORT_KEYS, validatePokedexSearch } from "@/lib/pokedexFilter";
+import { rawFromHumanized } from "./index";
 
 describe("validatePokedexSearch", () => {
   it("fills in every default when given an empty search object", () => {
@@ -17,6 +18,7 @@ describe("validatePokedexSearch", () => {
       growthRates: [],
       abilities: [],
       forms: [],
+      evYieldStats: [],
       final: false,
       sort: "dex",
       sortDir: "asc",

@@ -26,131 +26,26 @@ import { FilterBar, type FilterGroup } from "@/components/FilterBar";
 import { useCollectionLookup } from "@/hooks/useCollectionLookup";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { parseJsonArray, type PokemonAbility } from "@/lib/format";
-import { COLOR_ORDER, TYPE_COLORS, TYPE_ORDER, humanize } from "@/lib/labels";
+import { COLOR_ORDER, STAT_LABELS, TYPE_COLORS, TYPE_ORDER, humanize } from "@/lib/labels";
+import {
+  DEFAULT_SORT_DIRECTION,
+  filterPokemon,
+  hasActivePokedexFilters,
+  SORT_KEYS,
+  SORT_LABELS,
+  sortPokemonList,
+  validatePokedexSearch,
+  type GenderBucket,
+  type PokedexSearch,
+  type Rarity,
+  type SortKey,
+} from "@/lib/pokedexFilter";
+import { STAT_KEYS } from "@/lib/statCalc";
 import { cn } from "@/lib/utils";
 import { getPokemonList, type CollectionEntry, type Pokemon } from "@/lib/tauri";
 
 const CARD_WIDTH = 128; // px — fits the existing h-16 w-16 (64px) sprite + p-4 padding
 const GAP = 16; // px — matches the existing gap-4
-
-type Rarity = "legendary" | "mythical" | "baby";
-type GenderBucket = "genderless" | "male-only" | "female-only" | "mixed";
-
-// Object.keys() returns plain string[] — spreading it into an `as const`
-// array wouldn't narrow back to literal types, so the sortable keys are
-// declared as a literal tuple first and SORT_ACCESSORS is built to exactly
-// match it (Record<> below forces every key to be present, so adding a new
-// SortKey without an accessor is a compile error, not a silent runtime gap).
-const EXTRA_SORT_KEYS = [
-  "name", "generation", "height", "weight", "capture_rate", "base_happiness",
-  "stat_hp", "stat_attack", "stat_defense", "stat_special_attack", "stat_special_defense",
-  "stat_speed", "stat_total",
-] as const;
-export type SortKey = "dex" | (typeof EXTRA_SORT_KEYS)[number];
-export const SORT_KEYS: readonly SortKey[] = ["dex", ...EXTRA_SORT_KEYS];
-
-const SORT_ACCESSORS: Record<Exclude<SortKey, "dex">, (p: Pokemon) => number | string> = {
-  name: (p) => p.display_name,
-  generation: (p) => p.generation,
-  height: (p) => p.height,
-  weight: (p) => p.weight,
-  capture_rate: (p) => p.capture_rate,
-  base_happiness: (p) => p.base_happiness,
-  stat_hp: (p) => p.stat_hp,
-  stat_attack: (p) => p.stat_attack,
-  stat_defense: (p) => p.stat_defense,
-  stat_special_attack: (p) => p.stat_special_attack,
-  stat_special_defense: (p) => p.stat_special_defense,
-  stat_speed: (p) => p.stat_speed,
-  stat_total: (p) => p.stat_total,
-};
-const SORT_LABELS: Record<SortKey, string> = {
-  dex: "Dex Number",
-  name: "Name",
-  generation: "Generation",
-  height: "Height",
-  weight: "Weight",
-  capture_rate: "Capture Rate",
-  base_happiness: "Base Happiness",
-  stat_hp: "HP (Lv. 100)",
-  stat_attack: "Attack (Lv. 100)",
-  stat_defense: "Defense (Lv. 100)",
-  stat_special_attack: "Sp. Atk (Lv. 100)",
-  stat_special_defense: "Sp. Def (Lv. 100)",
-  stat_speed: "Speed (Lv. 100)",
-  stat_total: "Total Stats (Lv. 100)",
-};
-
-export type SortDir = "asc" | "desc";
-/** dex/name/generation read naturally ascending; every numeric stat-like field reads naturally descending (best first). Independent of this, the direction toggle can always override it. */
-export const DEFAULT_SORT_DIRECTION: Record<SortKey, SortDir> = {
-  dex: "asc",
-  name: "asc",
-  generation: "asc",
-  height: "desc",
-  weight: "desc",
-  capture_rate: "desc",
-  base_happiness: "desc",
-  stat_hp: "desc",
-  stat_attack: "desc",
-  stat_defense: "desc",
-  stat_special_attack: "desc",
-  stat_special_defense: "desc",
-  stat_speed: "desc",
-  stat_total: "desc",
-};
-
-export function genderBucket(rate: number): GenderBucket {
-  if (rate === -1) return "genderless";
-  if (rate === 0) return "male-only";
-  if (rate === 8) return "female-only";
-  return "mixed";
-}
-
-// Every field optional at the type level so <Link to="/"> never has to repeat
-// every filter's default — validateSearch below still fills in concrete
-// runtime defaults; the component recovers concrete types via destructuring
-// defaults at the point of use.
-export type PokedexSearch = Partial<{
-  q: string;
-  types: string[];
-  colors: string[];
-  gens: number[];
-  rarity: Rarity[];
-  gender: GenderBucket[];
-  eggGroups: string[];
-  shapes: string[];
-  growthRates: string[];
-  abilities: string[];
-  forms: string[];
-  final: boolean;
-  sort: SortKey;
-  sortDir: SortDir;
-}>;
-
-export const arrayOf = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
-
-export function validatePokedexSearch(search: Record<string, unknown>): PokedexSearch {
-  const sort: SortKey = (SORT_KEYS as readonly string[]).includes(search.sort as string)
-    ? (search.sort as SortKey)
-    : "dex";
-  return {
-    q: typeof search.q === "string" ? search.q : "",
-    types: arrayOf<string>(search.types),
-    colors: arrayOf<string>(search.colors),
-    gens: arrayOf<number>(search.gens).map(Number),
-    rarity: arrayOf<Rarity>(search.rarity),
-    gender: arrayOf<GenderBucket>(search.gender),
-    eggGroups: arrayOf<string>(search.eggGroups),
-    shapes: arrayOf<string>(search.shapes),
-    growthRates: arrayOf<string>(search.growthRates),
-    abilities: arrayOf<string>(search.abilities),
-    forms: arrayOf<string>(search.forms),
-    final: search.final === true,
-    sort,
-    sortDir: search.sortDir === "asc" || search.sortDir === "desc" ? search.sortDir : DEFAULT_SORT_DIRECTION[sort],
-  };
-}
 
 export const Route = createFileRoute("/")({
   component: PokedexGrid,
@@ -162,12 +57,23 @@ function PokedexGrid() {
   const rawSearch = Route.useSearch();
   const {
     q = "", types = [], colors = [], gens = [], rarity = [], gender = [],
-    eggGroups = [], shapes = [], growthRates = [], abilities = [], forms = [], final = false, sort = "dex",
-    sortDir = DEFAULT_SORT_DIRECTION[sort],
+    eggGroups = [], shapes = [], growthRates = [], abilities = [], forms = [], evYieldStats = [],
+    final = false, sort = "dex", sortDir = DEFAULT_SORT_DIRECTION[sort],
   } = rawSearch;
-  const search: Required<PokedexSearch> = {
-    q, types, colors, gens, rarity, gender, eggGroups, shapes, growthRates, abilities, forms, final, sort, sortDir,
-  };
+  // Memoized (not a fresh object literal every render) so `filtered` below —
+  // which depends on this object's reference — only recomputes when a field
+  // actually changes, not on every unrelated re-render (gallery index, stat
+  // simulator inputs elsewhere in the tree, etc.).
+  const search: Required<PokedexSearch> = useMemo(
+    () => ({
+      q, types, colors, gens, rarity, gender, eggGroups, shapes, growthRates, abilities, forms,
+      evYieldStats, final, sort, sortDir,
+    }),
+    [
+      q, types, colors, gens, rarity, gender, eggGroups, shapes, growthRates, abilities, forms,
+      evYieldStats, final, sort, sortDir,
+    ],
+  );
 
   const { data: pokemon, isLoading, error } = useQuery({
     queryKey: ["pokemon-list", {}],
@@ -183,17 +89,6 @@ function PokedexGrid() {
       [key]: current.includes(value) ? current.filter((v) => v !== value) : [...current, value],
     } as Partial<PokedexSearch>);
   }
-
-  const selectedTypes = useMemo(() => new Set(types), [types]);
-  const selectedColors = useMemo(() => new Set(colors), [colors]);
-  const selectedGens = useMemo(() => new Set(gens), [gens]);
-  const selectedRarity = useMemo(() => new Set(rarity), [rarity]);
-  const selectedGender = useMemo(() => new Set(gender), [gender]);
-  const selectedEggGroups = useMemo(() => new Set(eggGroups), [eggGroups]);
-  const selectedShapes = useMemo(() => new Set(shapes), [shapes]);
-  const selectedGrowthRates = useMemo(() => new Set(growthRates), [growthRates]);
-  const selectedAbilities = useMemo(() => new Set(abilities), [abilities]);
-  const selectedForms = useMemo(() => new Set(forms), [forms]);
 
   // Every form of every species, independent of active filters — the forms
   // preview always shows the full picture regardless of what's currently filtered.
@@ -235,34 +130,7 @@ function PokedexGrid() {
     [pokemon],
   );
 
-  const filtered = useMemo(
-    () =>
-      (pokemon ?? []).filter((p) => {
-        if (q && !p.display_name.toLowerCase().includes(q.toLowerCase())) return false;
-        if (selectedGens.size && !selectedGens.has(p.generation)) return false;
-        if (selectedRarity.size) {
-          const ok =
-            (selectedRarity.has("legendary") && p.is_legendary) ||
-            (selectedRarity.has("mythical") && p.is_mythical) ||
-            (selectedRarity.has("baby") && p.is_baby);
-          if (!ok) return false;
-        }
-        if (selectedGender.size && !selectedGender.has(genderBucket(p.gender_rate))) return false;
-        if (selectedTypes.size && !parseJsonArray(p.types).some((t) => selectedTypes.has(t))) return false;
-        if (selectedColors.size && !selectedColors.has(p.color)) return false;
-        if (selectedEggGroups.size && !parseJsonArray(p.egg_groups).some((g) => selectedEggGroups.has(g))) return false;
-        if (selectedShapes.size && (!p.shape || !selectedShapes.has(p.shape))) return false;
-        if (selectedGrowthRates.size && !selectedGrowthRates.has(p.growth_rate)) return false;
-        if (selectedAbilities.size && !parseJsonArray<PokemonAbility>(p.abilities).some((a) => selectedAbilities.has(a.name))) return false;
-        if (selectedForms.size && (!p.form_name || !selectedForms.has(p.form_name))) return false;
-        if (final && !p.is_final_evolution) return false;
-        return true;
-      }),
-    [
-      pokemon, q, selectedGens, selectedRarity, selectedGender, selectedTypes, selectedColors,
-      selectedEggGroups, selectedShapes, selectedGrowthRates, selectedAbilities, selectedForms, final,
-    ],
-  );
+  const filtered = useMemo(() => filterPokemon(pokemon ?? [], search), [pokemon, search]);
 
   // Collapse to one card per species — rows are already ordered id,form_id,
   // so this naturally prefers form_id 0 whenever it passes the filters above,
@@ -273,20 +141,7 @@ function PokedexGrid() {
   }, [filtered]);
 
   const sortedCards = useMemo(() => {
-    const ascending = sortDir === "asc";
-    if (sort === "dex") {
-      // visibleCards is already in natural ascending dex order — only descending needs work.
-      return ascending ? visibleCards : [...visibleCards].reverse();
-    }
-    const accessor = SORT_ACCESSORS[sort];
-    return [...visibleCards].sort((a, b) => {
-      const av = accessor(a);
-      const bv = accessor(b);
-      if (typeof av === "string" || typeof bv === "string") {
-        return ascending ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
-      }
-      return ascending ? av - (bv as number) : (bv as number) - av;
-    });
+    return sortPokemonList(visibleCards, sort, sortDir);
   }, [visibleCards, sort, sortDir]);
 
   // Virtualized, fixed-size grid: column count is computed from the measured
@@ -351,24 +206,12 @@ function PokedexGrid() {
     };
   }, [scrollKey]);
 
-  const hasActiveFilters =
-    q.length > 0 ||
-    selectedTypes.size > 0 ||
-    selectedColors.size > 0 ||
-    selectedGens.size > 0 ||
-    selectedRarity.size > 0 ||
-    selectedGender.size > 0 ||
-    selectedEggGroups.size > 0 ||
-    selectedShapes.size > 0 ||
-    selectedGrowthRates.size > 0 ||
-    selectedAbilities.size > 0 ||
-    selectedForms.size > 0 ||
-    final;
+  const hasActiveFilters = hasActivePokedexFilters(search);
 
   function clearAllFilters() {
     updateSearch({
       q: "", types: [], colors: [], gens: [], rarity: [], gender: [],
-      eggGroups: [], shapes: [], growthRates: [], abilities: [], forms: [], final: false,
+      eggGroups: [], shapes: [], growthRates: [], abilities: [], forms: [], evYieldStats: [], final: false,
     });
   }
 
@@ -428,6 +271,7 @@ function PokedexGrid() {
                   primary={p}
                   forms={formsBySpecies.get(p.id) ?? [p]}
                   collectionByKey={collectionByKey}
+                  searchContext={search}
                 />
               ))}
             </div>
@@ -469,8 +313,10 @@ function PokedexFilterBar({
   resultCount: number;
   totalCount: number;
 }) {
-  const { q, types, colors, gens, rarity, gender, eggGroups, shapes, growthRates, abilities, forms, final, sort, sortDir } =
-    search;
+  const {
+    q, types, colors, gens, rarity, gender, eggGroups, shapes, growthRates, abilities, forms,
+    evYieldStats, final, sort, sortDir,
+  } = search;
   const [abilitiesOpen, setAbilitiesOpen] = useState(false);
   const { isConfigured: isSyncConfigured, isLoading: syncLoading } = useSyncStatus();
 
@@ -552,6 +398,18 @@ function PokedexFilterBar({
     onToggle: (label) => toggleInArray("forms", forms, rawFromHumanized(options.formOptions, label)),
     onClear: () => updateSearch({ forms: [] }),
   };
+  // Fixed 6-stat list, not derived from data like the groups above.
+  const evYieldGroup: FilterGroup = {
+    key: "evYield",
+    label: "EV Yield",
+    items: STAT_KEYS.map((k) => STAT_LABELS[k]),
+    active: evYieldStats.map((k) => STAT_LABELS[k]),
+    onToggle: (label) => {
+      const key = STAT_KEYS.find((k) => STAT_LABELS[k] === label);
+      if (key) toggleInArray("evYieldStats", evYieldStats, key);
+    },
+    onClear: () => updateSearch({ evYieldStats: [] }),
+  };
 
   return (
     <div>
@@ -614,7 +472,7 @@ function PokedexFilterBar({
         leading={<RegionCaption>Appearance</RegionCaption>}
       />
       <FilterBar
-        groups={[generationGroup, rarityGroup, genderGroup, eggGroupGroup, growthRateGroup, formGroup]}
+        groups={[generationGroup, rarityGroup, genderGroup, eggGroupGroup, growthRateGroup, formGroup, evYieldGroup]}
         leading={<RegionCaption>Classification</RegionCaption>}
         trailing={
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -688,10 +546,12 @@ function PokedexCard({
   primary,
   forms,
   collectionByKey,
+  searchContext,
 }: {
   primary: Pokemon;
   forms: Pokemon[];
   collectionByKey: Map<string, CollectionEntry>;
+  searchContext: Required<PokedexSearch>;
 }) {
   const hasMultipleForms = forms.length > 1;
   const entry = collectionByKey.get(`${primary.id}-${primary.form_id}`);
@@ -715,7 +575,7 @@ function PokedexCard({
       <Link
         to="/pokemon/$id"
         params={{ id: String(primary.id) }}
-        search={{ form: primary.form_id }}
+        search={{ ...searchContext, form: primary.form_id }}
         className={cardClassName}
         style={cardStyle}
       >
@@ -759,7 +619,7 @@ function PokedexCard({
               key={f.form_id}
               to="/pokemon/$id"
               params={{ id: String(f.id) }}
-              search={{ form: f.form_id }}
+              search={{ ...searchContext, form: f.form_id }}
               onClick={() => setOpen(false)}
               className={cn(
                 "flex items-center gap-2 rounded-md p-1.5 text-sm hover:bg-muted",

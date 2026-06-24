@@ -6,6 +6,7 @@
 import type { Game } from "./bindings/Game";
 import type { Method } from "./bindings/Method";
 import type { ShinyMethod } from "./bindings/ShinyMethod";
+import type { StatKey } from "./statCalc";
 
 export const GAME_ORDER: Game[] = [
   "gen1_vc",
@@ -232,6 +233,16 @@ export const POKEMON_COLOR_HEX: Record<string, string> = {
   red: "#D94B4B",
   white: "#E8E8E8",
   yellow: "#F2D43E",
+};
+
+/** Display labels for the 6 stat keys — shared by the detail page's stat bars/EV-yield display and the Pokédex grid's EV-yield sort/filter UI. */
+export const STAT_LABELS: Record<StatKey, string> = {
+  hp: "HP",
+  attack: "Attack",
+  defense: "Defense",
+  special_attack: "Sp. Atk",
+  special_defense: "Sp. Def",
+  speed: "Speed",
 };
 
 /** "special-attack" -> "Special Attack" — for slug-shaped fields with no strong canonical order worth hardcoding (egg groups, body shapes, growth rates, abilities). */

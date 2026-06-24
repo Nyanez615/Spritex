@@ -36,12 +36,21 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { GenerationBadge } from "@/components/GenerationBadge";
+import { RecommendedBadge } from "@/components/RecommendedBadge";
+import { ShapeIcon } from "@/components/ShapeIcon";
 import {
   RequireSync,
   SyncRequiredNotice,
 } from "@/components/SyncRequiredNotice";
 import { usePokemonLookup } from "@/hooks/usePokemonLookup";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
+import {
+  DEFAULT_SORT_DIRECTION,
+  filterPokemon,
+  sortPokemonList,
+  validatePokedexSearch,
+  type PokedexSearch,
+} from "@/lib/pokedexFilter";
 import { cn } from "@/lib/utils";
 import {
   errorMessage,
@@ -53,6 +62,7 @@ import {
 import {
   GAME_LABELS,
   POKEMON_COLOR_HEX,
+  STAT_LABELS,
   TYPE_COLORS,
   humanize,
   methodLabel,
@@ -91,8 +101,16 @@ import {
 
 export const Route = createFileRoute("/pokemon/$id")({
   component: PokemonDetail,
-  validateSearch: (search: Record<string, unknown>): { form: number } => ({
+  // Spreads validatePokedexSearch's result so a card clicked from a
+  // filtered/sorted grid view carries that context here for next/prev
+  // navigation (see PokemonDetailContent) — every field stays optional at
+  // the type level (matching PokedexSearch's own Partial<> shape) so every
+  // other Link to this route (hunt, table, command palette, quick-counter)
+  // can keep passing just `{ form }`; PokemonDetailContent fills concrete
+  // defaults the same way index.tsx's PokedexGrid does.
+  validateSearch: (search: Record<string, unknown>): { form: number } & PokedexSearch => ({
     form: Number(search.form ?? 0) || 0,
+    ...validatePokedexSearch(search),
   }),
 });
 
@@ -109,13 +127,20 @@ export const ALL_STATUSES: CollectionStatus[] = [
 const FALLBACK_ERROR =
   "Couldn't load this Pokémon — it may not exist in the static database.";
 
-/** Prev/next detail-page nav arrow — disabled (no Link) at either end of the ordered list. */
+/**
+ * Prev/next detail-page nav arrow — disabled (no Link) at either end of the
+ * ordered list. Carries `searchContext` forward on the Link so repeated
+ * next/prev clicks keep walking the same filtered/sorted order rather than
+ * losing it after the first hop.
+ */
 function PokemonNavButton({
   target,
   icon: Icon,
+  searchContext,
 }: {
   target: Pokemon | undefined;
   icon: typeof ChevronLeft;
+  searchContext: Required<PokedexSearch>;
 }) {
   if (!target) {
     return (
@@ -129,7 +154,7 @@ function PokemonNavButton({
       <Link
         to="/pokemon/$id"
         params={{ id: String(target.id) }}
-        search={{ form: target.form_id }}
+        search={{ ...searchContext, form: target.form_id }}
       >
         <Icon className="size-4" />
       </Link>
@@ -153,17 +178,54 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
   const pokemonId = Number(id);
   const formId = form;
   const queryClient = useQueryClient();
-  const { ordered: orderedPokemon } = usePokemonLookup();
-  const { prevPokemon, nextPokemon } = useMemo(() => {
-    const currentIndex = orderedPokemon.findIndex((p) => p.id === pokemonId && p.form_id === formId);
+  // Arrived via a grid card click: rawSearchContext carries the grid's
+  // active filters/sort, so next/prev walks that same context. Arrived with
+  // no context (direct URL, command palette, hunt, quick-counter): every
+  // field below defaults to "no filters, dex order," reproducing the full
+  // natural list — same destructuring-with-defaults pattern as index.tsx's
+  // PokedexGrid, since PokedexSearch's fields are optional at the type level.
+  const rawSearchContext = Route.useSearch();
+  // Memoized on rawSearchContext (stable when the route's search params
+  // haven't changed) rather than rebuilt as a fresh object literal every
+  // render — a fresh reference every render would defeat contextOrderedPokemon's
+  // own memoization below, forcing a full filter+sort pass on every re-render
+  // (e.g. every keystroke in the stat simulator) instead of only when the
+  // actual filter/sort context changes.
+  const searchContext: Required<PokedexSearch> = useMemo(() => {
+    const ctxSort = rawSearchContext.sort ?? "dex";
     return {
-      prevPokemon: currentIndex > 0 ? orderedPokemon[currentIndex - 1] : undefined,
+      q: rawSearchContext.q ?? "",
+      types: rawSearchContext.types ?? [],
+      colors: rawSearchContext.colors ?? [],
+      gens: rawSearchContext.gens ?? [],
+      rarity: rawSearchContext.rarity ?? [],
+      gender: rawSearchContext.gender ?? [],
+      eggGroups: rawSearchContext.eggGroups ?? [],
+      shapes: rawSearchContext.shapes ?? [],
+      growthRates: rawSearchContext.growthRates ?? [],
+      abilities: rawSearchContext.abilities ?? [],
+      forms: rawSearchContext.forms ?? [],
+      evYieldStats: rawSearchContext.evYieldStats ?? [],
+      final: rawSearchContext.final ?? false,
+      sort: ctxSort,
+      sortDir: rawSearchContext.sortDir ?? DEFAULT_SORT_DIRECTION[ctxSort],
+    };
+  }, [rawSearchContext]);
+  const { ordered: allPokemon } = usePokemonLookup();
+  const contextOrderedPokemon = useMemo(
+    () => sortPokemonList(filterPokemon(allPokemon, searchContext), searchContext.sort, searchContext.sortDir),
+    [allPokemon, searchContext],
+  );
+  const { prevPokemon, nextPokemon } = useMemo(() => {
+    const currentIndex = contextOrderedPokemon.findIndex((p) => p.id === pokemonId && p.form_id === formId);
+    return {
+      prevPokemon: currentIndex > 0 ? contextOrderedPokemon[currentIndex - 1] : undefined,
       nextPokemon:
-        currentIndex !== -1 && currentIndex < orderedPokemon.length - 1
-          ? orderedPokemon[currentIndex + 1]
+        currentIndex !== -1 && currentIndex < contextOrderedPokemon.length - 1
+          ? contextOrderedPokemon[currentIndex + 1]
           : undefined,
     };
-  }, [orderedPokemon, pokemonId, formId]);
+  }, [contextOrderedPokemon, pokemonId, formId]);
 
   const {
     data: pokemon,
@@ -270,8 +332,8 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
-        <PokemonNavButton target={prevPokemon} icon={ChevronLeft} />
-        <PokemonNavButton target={nextPokemon} icon={ChevronRight} />
+        <PokemonNavButton target={prevPokemon} icon={ChevronLeft} searchContext={searchContext} />
+        <PokemonNavButton target={nextPokemon} icon={ChevronRight} searchContext={searchContext} />
         <h1 className="text-base font-semibold text-foreground">
           {pokemon.display_name}
         </h1>
@@ -518,9 +580,28 @@ function ProfileField({
   );
 }
 
-/** Compact "+1 HP, +2 Speed"-style summary — only the nonzero EV yield stats. */
-function formatEvYield(pokemon: Pokemon): string {
-  const yields: Array<[StatKey, number]> = [
+/** Short abbreviations for the compact EV-yield pill grid — STAT_LABELS' full words ("Attack") don't fit a small pill. */
+const STAT_SHORT_LABELS: Record<StatKey, string> = {
+  hp: "HP",
+  attack: "Atk",
+  defense: "Def",
+  special_attack: "Sp.Atk",
+  special_defense: "Sp.Def",
+  speed: "Speed",
+};
+
+/** A styling convention, not a cited game-mechanic fact, same rationale as TYPE_COLORS/GENERATION_COLORS — picked to not collide with either of those palettes. */
+const STAT_COLORS: Record<StatKey, string> = {
+  hp: "#4CAF50",
+  attack: "#FFC107",
+  defense: "#FF9800",
+  special_attack: "#29B6F6",
+  special_defense: "#7E57C2",
+  speed: "#EC407A",
+};
+
+function evYieldByStat(pokemon: Pokemon): Array<[StatKey, number]> {
+  return [
     ["hp", pokemon.ev_yield_hp],
     ["attack", pokemon.ev_yield_attack],
     ["defense", pokemon.ev_yield_defense],
@@ -528,9 +609,33 @@ function formatEvYield(pokemon: Pokemon): string {
     ["special_defense", pokemon.ev_yield_special_defense],
     ["speed", pokemon.ev_yield_speed],
   ];
-  const nonzero = yields.filter(([, value]) => value > 0);
-  if (nonzero.length === 0) return "—";
-  return nonzero.map(([key, value]) => `+${value} ${STAT_LABELS[key]}`).join(", ");
+}
+
+/** Total EV points a single defeated wild/trainer Pokémon of this species grants — capped at 3 per the games' own rules, shown here as a sanity total, not the player's 510 EV cap. */
+function evYieldTotal(pokemon: Pokemon): number {
+  return evYieldByStat(pokemon).reduce((sum, [, value]) => sum + value, 0);
+}
+
+/** Colored stat-pill grid + total, matching the reference layout the user provided — replaces a plain "+1 Sp. Atk"-style text summary. */
+function EvYieldPills({ pokemon }: { pokemon: Pokemon }) {
+  const total = evYieldTotal(pokemon);
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground mb-1.5">Total: {total}</p>
+      <div className="grid grid-cols-6 gap-1.5 max-w-xs">
+        {evYieldByStat(pokemon).map(([key, value]) => (
+          <div
+            key={key}
+            className="flex flex-col items-center justify-center rounded-md py-1.5 text-black"
+            style={{ backgroundColor: STAT_COLORS[key] }}
+          >
+            <span className="text-sm font-bold leading-tight">{value}</span>
+            <span className="text-[10px] leading-tight">{STAT_SHORT_LABELS[key]}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /** Bulbapedia-style male(blue)/female(pink) ratio bar, reusing the same hex values as the Color profile field's swatches. */
@@ -593,7 +698,14 @@ function ProfileSection({
           </span>
         </ProfileField>
         <ProfileField label="Shape">
-          {pokemon.shape ? humanize(pokemon.shape) : "—"}
+          {pokemon.shape ? (
+            <span className="flex items-center gap-1.5">
+              <ShapeIcon shape={pokemon.shape} className="text-muted-foreground shrink-0" />
+              {humanize(pokemon.shape)}
+            </span>
+          ) : (
+            "—"
+          )}
         </ProfileField>
 
         {/* Physical */}
@@ -622,21 +734,29 @@ function ProfileSection({
         {/* Battle */}
         <ProfileField label="Abilities">
           {abilities.length > 0 ? (
-            abilities.map((a, i) => (
-              <span key={a.name}>
-                {i > 0 && ", "}
-                {humanize(a.name)}
-                {a.isHidden && (
-                  <span className="text-muted-foreground"> (Hidden)</span>
-                )}
-              </span>
-            ))
+            <div className="flex flex-wrap items-center gap-x-1 gap-y-1">
+              {abilities.map((a, i) => (
+                <span key={a.name} className="inline-flex items-center gap-1">
+                  {i > 0 && <span>,</span>}
+                  <span className={a.isHidden ? "italic text-primary" : undefined}>
+                    {humanize(a.name)}
+                  </span>
+                  {a.isHidden && (
+                    <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                      HA
+                    </Badge>
+                  )}
+                </span>
+              ))}
+            </div>
           ) : (
             "—"
           )}
         </ProfileField>
         <ProfileField label="EXP Yield">{pokemon.base_experience}</ProfileField>
-        <ProfileField label="EV Yield">{formatEvYield(pokemon)}</ProfileField>
+        <ProfileField label="EV Yield">
+          <EvYieldPills pokemon={pokemon} />
+        </ProfileField>
         {megaStones.length > 0 && (
           <ProfileField label="Mega Stone">
             {megaStones.map(humanize).join(", ")}
@@ -649,14 +769,6 @@ function ProfileSection({
 
 // Conservative ceiling so bars are visually comparable across species without per-page rescaling.
 const STAT_BAR_MAX = 700;
-const STAT_LABELS: Record<StatKey, string> = {
-  hp: "HP",
-  attack: "Attack",
-  defense: "Defense",
-  special_attack: "Sp. Atk",
-  special_defense: "Sp. Def",
-  speed: "Speed",
-};
 const EV_TOTAL_CAP = 510;
 /** Official blue (boosted) / red (lowered) for the selected nature's effect on a stat bar — undefined (neutral) otherwise. HP is never affected by nature. */
 function natureStatColor(nature: Nature, key: StatKey): string | undefined {
@@ -946,7 +1058,7 @@ function MethodRow({ method }: { method: ShinyMethod }) {
             <span className="text-sm text-muted-foreground">
               {methodLabel(method)}
             </span>
-            {method.is_best_method && <Badge>Best</Badge>}
+            {method.is_best_method && <RecommendedBadge />}
             {method.requires_transfer && (
               <Tooltip>
                 <TooltipTrigger asChild>
