@@ -60,7 +60,7 @@
 import { readOutJson, writeOutJson } from "./httpCache.js";
 import type { FetchedCosmeticForm, FetchedSpecies } from "./fetchPokeapi.js";
 import type { EvolutionChainNode } from "./fetchEvolutionChains.js";
-import type { AvailabilityOutput } from "./scrapeBulbapedia.js";
+import { CONCURRENT_UNDISAMBIGUATED_SPECIES, type AvailabilityOutput } from "./scrapeBulbapedia.js";
 import type { ShinyLockFact } from "./scrapeShinyLocks.js";
 import type { DynamaxAdventureFact } from "./scrapeDynamaxAdventure.js";
 import type { FriendSafariFact } from "./scrapeFriendSafari.js";
@@ -192,16 +192,28 @@ function resolveLockedGames(byName: Map<string, FetchedSpecies>, locks: ShinyLoc
       unmatched++;
       continue;
     }
-    const variety = lock.formName
-      ? candidate.varieties.find((v) => v.formName === lock.formName)
-      : candidate.varieties.find((v) => v.formId === 0);
-    if (!variety) {
+    // An unannotated lock entry on a CONCURRENT_UNDISAMBIGUATED_SPECIES
+    // (Urshifu, Oinkologne) locks every tracked variety, not just the
+    // default — Bulbapedia's "List of unobtainable Shiny Pokémon" never
+    // disambiguates these species' forms either, the same zero-
+    // disambiguation fact already established in scrapeBulbapedia.ts for
+    // availability. Confirmed as a real bug, not a hypothetical: without
+    // this, Urshifu's SwSh/SV shiny lock silently applied to Single Strike
+    // only, leaving Rapid Strike incorrectly shiny-obtainable.
+    const varieties = !lock.formName && CONCURRENT_UNDISAMBIGUATED_SPECIES.has(candidate.name)
+      ? candidate.varieties
+      : lock.formName
+        ? candidate.varieties.filter((v) => v.formName === lock.formName)
+        : candidate.varieties.filter((v) => v.formId === 0);
+    if (varieties.length === 0) {
       unmatched++;
       continue;
     }
-    const key = `${candidate.pokemonId}:${variety.formId}`;
-    if (!locked.has(key)) locked.set(key, new Set());
-    locked.get(key)!.add(lock.game);
+    for (const variety of varieties) {
+      const key = `${candidate.pokemonId}:${variety.formId}`;
+      if (!locked.has(key)) locked.set(key, new Set());
+      locked.get(key)!.add(lock.game);
+    }
   }
 
   if (unmatched > 0) console.log(`  deriveShinyMethods: ${unmatched} shiny-lock entries didn't match a tracked species/form (skipped, not guessed)`);

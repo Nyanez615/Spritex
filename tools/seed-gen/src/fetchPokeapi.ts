@@ -39,7 +39,110 @@ const POKEAPI_BASE = "https://pokeapi.co/api/v2";
  * regional-form species) turned up this and one other category, "Totem"
  * encounters (see the Totem check below), both missed by a strict prefix.
  */
-const REGIONAL_ADJECTIVES = ["Alolan", "Galarian", "Hisuian", "Paldean"];
+/**
+ * One entry per region: REGIONAL_ADJECTIVES' English display-name adjective
+ * (matched against a variety's formDisplayName) alongside PokéAPI's own
+ * short region-slug prefix (matched against a form_name slug — confirmed
+ * live: Alolan Raichu's form_name is "alola", Galarian Darmanitan's is
+ * "galar-standard"). Kept as one paired list, not two independently-
+ * maintained ones, so a 5th region only needs updating in one place.
+ */
+const REGIONS = [
+  { adjective: "Alolan", slug: "alola" },
+  { adjective: "Galarian", slug: "galar" },
+  { adjective: "Hisuian", slug: "hisui" },
+  { adjective: "Paldean", slug: "paldea" },
+];
+const REGIONAL_ADJECTIVES = REGIONS.map((r) => r.adjective);
+
+/**
+ * Resolves a battle-only cosmetic form's baseFormId when the form itself is
+ * layered on top of a regional form, not the base species (confirmed real:
+ * Galarian Darmanitan's own Zen Mode form_name is "galar-zen" — checked
+ * exhaustively against every cached is_battle_only form, the only such case
+ * in this dataset, but resolved generally rather than hardcoded to Darmanitan
+ * specifically, since nothing rules out a future generation adding another).
+ */
+function resolveCosmeticBaseFormId(kind: string, varieties: FetchedVariety[]): number {
+  const region = REGIONS.find((r) => kind === r.slug || kind.startsWith(`${r.slug}-`));
+  if (!region) return 0;
+  return varieties.find((v) => v.formName === region.adjective)?.formId ?? 0;
+}
+
+/**
+ * Non-regional alternate forms confirmed to deserve their own `pokemon` row
+ * — matched against PokéAPI's raw `form_name` slug, not the English name
+ * (these don't follow the "<Adjective> <Species>" pattern regional forms
+ * do). A hand-maintained classification list, the same kind
+ * `REGIONAL_ADJECTIVES` already is — not "data," a verified rule.
+ *
+ * The deciding test (confirmed per-species against Bulbapedia's own "List
+ * of Pokémon with form differences" page and, where ambiguous, each
+ * species' own article — NOT inferred from PokéAPI's `is_battle_only`
+ * flag, which doesn't reliably track this; e.g. Crowned Zacian/Zamazenta is
+ * flagged `is_battle_only` by PokéAPI despite persisting in storage as long
+ * as it holds the Rusted Sword/Shield): does this form have a real stat/
+ * type/Ability difference, AND can it persist as the saved state of a box
+ * Pokémon (as opposed to a transformation of the same individual that's
+ * forced back to normal the instant you leave the triggering context, like
+ * Mega Evolution/Gigantamax)?
+ *
+ * Reversible field-state toggles confirmed to persist outside battle (no
+ * "temporarily"/"in battle" qualifier in Bulbapedia's own description):
+ * Deoxys, the Therian formes, Rotom, Origin Dialga/Palkia/Giratina, Shaymin
+ * Sky, Kyurem's fusions, Necrozma's fusions (Ultra Necrozma itself stays
+ * excluded — confirmed genuinely battle-only), Calyrex's Riders, Hoopa
+ * Unbound, Ogerpon's masks, Crowned Zacian/Zamazenta, Zygarde's 10%/50%
+ * Forme × {Aura Break, Power Construct} combinations (50%+Aura Break is
+ * already the species' default variety; Complete/Mega Zygarde stay
+ * excluded — confirmed battle-only/handled by the existing Mega path),
+ * Oricorio's dance styles, Battle Bond Greninja (Ash-Greninja, the further
+ * in-battle-only transformation of this same individual, stays excluded),
+ * Partner Pikachu/Eevee, and Terapagos's Terastal Form (its real, permanent
+ * evolution-like state — Stellar Form stays excluded, a pure in-battle
+ * Terastallization layered on top).
+ *
+ * Evolution/encounter-locked, confirmed "cannot change forms": Lycanroc,
+ * Toxtricity, Wormadam's cloaks, Urshifu's styles, Pumpkaboo/Gourgeist's
+ * sizes, the 4 mechanical-gender-difference species (Basculegion/Indeedee/
+ * Meowstic/Oinkologne), and Ursaluna Bloodmoon.
+ *
+ * Deliberately deferred, not silently dropped: Shellos/Gastrodon's East/
+ * West Sea split and Arceus/Silvally's type-changing Plate/Memory formes
+ * all share a genuinely different PokéAPI data shape than everything above
+ * — confirmed live that these species have only ONE entry in
+ * `species.varieties` (no separate stat-bearing variety per form at all),
+ * with the alternates instead living as plain `pokemon-form` resources
+ * (sprite data only, no stat override) attached to that one variety. This
+ * pipeline's whole non-default-variety-based detection mechanism doesn't
+ * apply to that shape; modeling it correctly needs separate, dedicated
+ * pipeline work, not a forced fit here.
+ */
+const GROUP_A_FORM_NAMES = new Set([
+  "attack", "defense", "speed", // deoxys (normal is the default variety)
+  "therian", // landorus / thundurus / tornadus / enamorus
+  "heat", "wash", "frost", "fan", "mow", // rotom
+  "origin", // dialga / palkia / giratina
+  "sky", // shaymin
+  "black", "white", // kyurem
+  "dusk", "dawn", // necrozma (also lycanroc's Dusk forme — same slug, same group, no conflict) and necrozma
+  "ice", "shadow", // calyrex
+  "unbound", // hoopa
+  "wellspring-mask", "hearthflame-mask", "cornerstone-mask", // ogerpon
+  "crowned", // zacian / zamazenta
+  "10", "10-power-construct", "50-power-construct", // zygarde
+  "pom-pom", "pau", "sensu", // oricorio (baile is the default variety)
+  "battle-bond", // greninja
+  "starter", // pikachu / eevee (Partner forms)
+  "terastal", // terapagos
+  "midnight", // lycanroc
+  "low-key", // toxtricity
+  "sandy", "trash", // wormadam (plant is the default variety)
+  "rapid-strike", // urshifu (single-strike is the default variety)
+  "small", "large", "super", // pumpkaboo / gourgeist (average is the default variety)
+  "female", // basculegion / indeedee / meowstic / oinkologne
+  "bloodmoon", // ursaluna
+]);
 
 interface PokeApiNamedResource {
   name: string;
@@ -149,7 +252,7 @@ export interface FetchedVariety {
   evYieldSpeed: number;
 }
 
-export type CosmeticFormKind = "mega" | "mega_x" | "mega_y" | "gmax";
+export type CosmeticFormKind = string;
 
 /**
  * Mega Evolution / Gigantamax — cosmetic battle forms, not distinct dex
@@ -160,7 +263,13 @@ export type CosmeticFormKind = "mega" | "mega_x" | "mega_y" | "gmax";
  */
 export interface FetchedCosmeticForm {
   pokemonId: number;
-  /** Which varieties[].formId this attaches to — always 0; no released game pairs Mega/Gmax with a regional form. */
+  /**
+   * Which varieties[].formId this attaches to — 0 for Mega/Gmax (confirmed:
+   * no released game pairs those with a regional form) but NOT always 0 in
+   * general — e.g. Galarian Darmanitan's own Zen Mode ("galar-zen") attaches
+   * to formId 1 (Galarian), not formId 0 (Kantonian). Resolved by
+   * resolveCosmeticBaseFormId, not hardcoded.
+   */
   baseFormId: number;
   kind: CosmeticFormKind;
   displayName: string;
@@ -310,7 +419,28 @@ function extractEvYield(stats: PokeApiPokemon["stats"]): Pick<FetchedVariety, "e
   };
 }
 
-/** Determines a cosmetic form's kind from its PokéAPI form flags — undefined for any other battle-only cosmetic (Crowned Sword/Shield, Eternamax, Zen Mode, ...), which stays unmodeled, same as before this feature existed. */
+/**
+ * Title-cases a kebab-case PokéAPI form_name slug for display, e.g.
+ * "wellspring-mask" -> "Wellspring Mask". Same logic as src/lib/labels.ts's
+ * humanize() — duplicated, not imported, since tools/seed-gen is a separate
+ * Node package with no import path into the frontend's src/lib/.
+ */
+function humanizeFormName(slug: string): string {
+  return slug.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+}
+
+/**
+ * Determines a cosmetic form's kind from its PokéAPI form flags. Any other
+ * `is_battle_only` form (Zen Mode, Primal Reversion, Blade Aegislash, ...)
+ * uses its own `form_name` directly as `kind` — confirmed live that
+ * PokéAPI's `is_battle_only` flag correctly identifies every one of these
+ * (GROUP_A_FORM_NAMES intercepts the handful of misleadingly-flagged
+ * exceptions, like Crowned Zacian/Zamazenta, before this function is ever
+ * called). Eternamax Eternatus is the one explicit exception even within
+ * this battle-only bucket — confirmed via Bulbapedia that it's flagged
+ * "unobtainable," never player-visible outside one move animation, not
+ * worth even a cosmetic_forms row.
+ */
 function cosmeticFormKind(form: PokeApiForm): CosmeticFormKind | undefined {
   if (form.is_mega) {
     if (form.form_name === "mega-x") return "mega_x";
@@ -318,6 +448,7 @@ function cosmeticFormKind(form: PokeApiForm): CosmeticFormKind | undefined {
     return "mega";
   }
   if (form.form_name === "gmax") return "gmax";
+  if (form.is_battle_only && form.form_name !== "eternamax") return form.form_name;
   return undefined;
 }
 
@@ -348,13 +479,18 @@ async function fetchVarietyDetail(
     const formRef = pokemon.forms[0];
     if (!formRef) return {};
     const form = await limiter.run(() => cachedJson<PokeApiForm>("pokeapi-form", formRef.name, formRef.url));
-    if (form.is_battle_only || form.is_mega) {
+    // GROUP_A_FORM_NAMES takes priority over is_battle_only — PokéAPI's flag
+    // misleadingly marks a few real, persistent forms this way (Crowned
+    // Zacian/Zamazenta), confirmed live against Bulbapedia. Mega/Gmax are
+    // never in that list (they're real cosmetic-only transformations), so
+    // this never short-circuits the existing Mega/Gmax path.
+    if (!GROUP_A_FORM_NAMES.has(form.form_name) && (form.is_battle_only || form.is_mega)) {
       const kind = cosmeticFormKind(form);
       if (!kind) return {}; // other battle-only cosmetic (Crowned, Eternamax, ...) — not modeled
       return {
         cosmeticForm: {
           pokemonId: 0, // filled in by the caller, which knows the species id
-          baseFormId: 0,
+          baseFormId: 0, // placeholder — the caller re-resolves this via resolveCosmeticBaseFormId once the species' full varieties list is known
           kind,
           displayName: englishName(form.names, pokemon.name),
           spriteUrl: bestSprite(pokemon.sprites, false),
@@ -403,12 +539,14 @@ async function fetchVarietyDetail(
     // below (which "Totem Alolan Marowak" would otherwise also pass).
     if (/\bTotem\b/.test(formDisplayName)) return {};
     const adjective = REGIONAL_ADJECTIVES.find((adj) => new RegExp(`\\b${adj}\\b`).test(formDisplayName));
-    if (!adjective) return {}; // cosmetic-only variant (pattern/cap/season/etc.) — not modeled
+    const groupAName = GROUP_A_FORM_NAMES.has(form.form_name) ? humanizeFormName(form.form_name) : undefined;
+    const formName = adjective ?? groupAName;
+    if (!formName) return {}; // cosmetic-only variant (pattern/cap/season/etc.) — not modeled
 
     return {
       variety: {
         formId: formIndex,
-        formName: adjective,
+        formName,
         displayName: formDisplayName,
         apiPokemonName: variety.pokemon.name,
         ...shared,
@@ -452,6 +590,7 @@ export async function fetchAllSpecies(): Promise<{ species: FetchedSpecies[]; co
       const isBreedable = !species.egg_groups.some((g) => g.name === "no-eggs");
 
       const varieties: FetchedVariety[] = [];
+      const speciesCosmeticForms: FetchedCosmeticForm[] = [];
       let formIndex = 1;
       for (const variety of species.varieties) {
         const { variety: detail, cosmeticForm } = await fetchVarietyDetail(
@@ -462,10 +601,21 @@ export async function fetchAllSpecies(): Promise<{ species: FetchedSpecies[]; co
           if (!variety.is_default) formIndex++;
         }
         if (cosmeticForm) {
-          cosmeticForms.push({ ...cosmeticForm, pokemonId: species.id });
+          speciesCosmeticForms.push(cosmeticForm);
         }
       }
       varieties.sort((a, b) => a.formId - b.formId);
+      // baseFormId resolution needs the species' FULL varieties list (e.g.
+      // Galarian Darmanitan's own formId must already be known to attach its
+      // Zen Mode cosmetic form to it instead of the base form), so it can't
+      // happen inside fetchVarietyDetail, which only sees one variety at a time.
+      for (const cosmeticForm of speciesCosmeticForms) {
+        cosmeticForms.push({
+          ...cosmeticForm,
+          pokemonId: species.id,
+          baseFormId: resolveCosmeticBaseFormId(cosmeticForm.kind, varieties),
+        });
+      }
 
       out.push({
         pokemonId: species.id,

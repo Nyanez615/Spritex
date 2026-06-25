@@ -93,18 +93,39 @@ function upsert(out: Map<string, EvolutionChainNode>, chainId: number, key: Form
   }
 }
 
-/** Records both endpoints of every edge — the detail that makes this correct, see file header. */
+/**
+ * Records both endpoints of every edge (see file header), AND seeds every
+ * other tracked variety of the current node's own species at this same
+ * depth. The second part generalizes what was originally a root-only
+ * special case (Tauros: a chain root with zero evolution edges at all,
+ * whose 3 Paldean breeds were invisible to the edge-driven walk) — but
+ * Wormadam's Sandy/Trash Cloak, Gourgeist's Small/Large/Super, and
+ * Meowstic/Basculegion/Oinkologne's Female all hit the exact same gap
+ * *mid-chain*, not just at the root (their evolution edge in/out doesn't
+ * disambiguate by form at all, so the edge-driven walk alone only ever
+ * discovers the bare/default variety) — confirmed empirically by the
+ * pokemon/evolution_chains row-count mismatch this produced before this
+ * fix. Doing it per-node, not just for the root, subsumes the original
+ * special case entirely.
+ */
 function walkChain(
   node: PokeApiChainNode,
   depth: number,
   chainId: number,
   nameIndex: Map<string, FormKey>,
+  speciesById: Map<number, FetchedSpecies>,
   out: Map<string, EvolutionChainNode>,
   unmatched: { count: number },
 ): void {
   const bareKey = nameIndex.get(node.species.name);
   if (!bareKey) unmatched.count++;
   upsert(out, chainId, bareKey, depth);
+  const species = bareKey && speciesById.get(bareKey.pokemonId);
+  if (species) {
+    for (const v of species.varieties) {
+      upsert(out, chainId, { pokemonId: species.pokemonId, formId: v.formId }, depth);
+    }
+  }
 
   for (const child of node.evolves_to) {
     const childBareKey = nameIndex.get(child.species.name);
@@ -116,7 +137,7 @@ function walkChain(
       upsert(out, chainId, fromKey, depth);
       upsert(out, chainId, toKey, depth + 1);
     }
-    walkChain(child, depth + 1, chainId, nameIndex, out, unmatched);
+    walkChain(child, depth + 1, chainId, nameIndex, speciesById, out, unmatched);
   }
 }
 
@@ -137,21 +158,7 @@ export async function runFetchEvolutionChains(): Promise<number[]> {
       const chain = await limiter.run(() => cachedJson<PokeApiEvolutionChain>("pokeapi-evolution-chain", chainIdFromUrl(url), url));
       collectFinalEvolutions(chain.chain, finalEvolutionIds);
       const chainId = Number(chainIdFromUrl(url));
-      walkChain(chain.chain, 0, chainId, nameIndex, chainNodes, unmatched);
-      // A species can have multiple tracked varieties (regional forms,
-      // Paldean breeds) with zero evolution edges referencing any but its
-      // default one — e.g. Tauros doesn't evolve at all, in any form, so
-      // the edge-driven walk above never discovers its 3 Paldean breeds.
-      // The chain's root species can never be reached by an incoming edge
-      // (it's the graph root by definition), so every one of its own
-      // varieties unconditionally belongs at stage 0.
-      const rootKey = nameIndex.get(chain.chain.species.name);
-      const rootSpecies = rootKey && speciesById.get(rootKey.pokemonId);
-      if (rootSpecies) {
-        for (const v of rootSpecies.varieties) {
-          upsert(chainNodes, chainId, { pokemonId: rootSpecies.pokemonId, formId: v.formId }, 0);
-        }
-      }
+      walkChain(chain.chain, 0, chainId, nameIndex, speciesById, chainNodes, unmatched);
       done++;
       if (done % 100 === 0) console.log(`  fetched ${done}/${chainUrls.size} chains`);
     }),

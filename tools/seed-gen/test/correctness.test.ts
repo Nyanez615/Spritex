@@ -603,3 +603,129 @@ test('"Totem" PokéAPI varieties (Totem Alolan Marowak, Totem Alolan Raticate) s
   assert.equal(marowak.length, 2, "expected only base + Alolan Marowak, no Totem row");
   assert.equal(raticate.length, 2, "expected only base + Alolan Raticate, no Totem row");
 });
+
+// --- Group A/B form-tracking audit (zen mode and ~125 other unmodeled forms) ---
+//
+// User's decision rule: a variant gets its own `pokemon` row if it has any
+// real mechanical difference from the base form, UNLESS it's a
+// transformation of the same individual forced back to normal the instant
+// you leave the triggering context (Mega/Gmax-shaped — those go in
+// `cosmetic_forms` instead). Every species below was checked against
+// Bulbapedia's own "List of Pokémon with form differences" page and/or its
+// own species article, not inferred from PokéAPI's is_battle_only flag
+// (verified unreliable — see fetchPokeapi.ts's GROUP_A_FORM_NAMES header).
+
+test("Deoxys (#386) has all 4 formes (Normal/Attack/Defense/Speed) as distinct pokemon rows with genuinely different stat blocks (confirmed real, persistent forms — switched via meteorite, not battle-only)", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const deoxys = pokemon.filter((p) => p.id === 386).sort((a, b) => a.form_id - b.form_id);
+  assert.equal(deoxys.length, 4, "expected Normal/Attack/Defense/Speed as 4 separate form_ids");
+  const attackStats = new Set(deoxys.map((d) => d.stat_attack));
+  assert.equal(attackStats.size, 4, "expected each Deoxys forme to have a distinct Attack stat");
+});
+
+test("Crowned Zacian (#888) is tracked as its own Fairy/Steel form with a higher Attack than base Zacian (Fairy-only) — confirmed it persists in storage (shown in the PC box while holding the Rusted Sword), unlike PokéAPI's misleading is_battle_only:true flag", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const base = pokemon.find((p) => p.id === 888 && p.form_id === 0);
+  const crowned = pokemon.find((p) => p.id === 888 && p.form_name === "Crowned");
+  assert.ok(base, "expected base Zacian");
+  assert.ok(crowned, "expected a Crowned Zacian row");
+  assert.deepEqual(JSON.parse(base!.types), ["fairy"]);
+  assert.deepEqual(JSON.parse(crowned!.types), ["fairy", "steel"]);
+  assert.ok(crowned!.stat_attack > base!.stat_attack, "expected Crowned Zacian's Attack to exceed base Zacian's");
+});
+
+test("Wormadam (#413) has all 3 cloaks (Plant/Sandy/Trash) as distinct pokemon rows with their own correct, distinct types — resolveAnnotation's qualifier-word generalization (\"Cloak\"/\"Cloaks\") correctly disambiguates Bulbapedia's '''Sandy Cloak'''/'''Trash Cloak''' bold annotations", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const wormadam = pokemon.filter((p) => p.id === 413).sort((a, b) => a.form_id - b.form_id);
+  assert.equal(wormadam.length, 3, "expected Plant/Sandy/Trash Cloak as 3 separate form_ids");
+  assert.deepEqual(
+    wormadam.map((w) => JSON.stringify(JSON.parse(w.types).sort())),
+    [JSON.stringify(["bug", "grass"]), JSON.stringify(["bug", "ground"]), JSON.stringify(["bug", "steel"])],
+  );
+});
+
+test("Pumpkaboo (#710) has all 4 sizes (Average/Small/Large/Super) as distinct pokemon rows, each with real SV/SwSh availability — resolveAnnotation's ANNOTATION_NAME_SYNONYMS maps Bulbapedia's colloquial \"Medium\"/\"Jumbo\" wikitext synonyms to the canonical Average/Super form names", async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const pumpkabooRows = rows.filter((r) => r.pokemon_id === 710);
+  const formIds = new Set(pumpkabooRows.map((r) => r.form_id));
+  assert.deepEqual(formIds, new Set([0, 1, 2, 3]), "expected all 4 Pumpkaboo sizes to have their own real availability, not just the default");
+});
+
+test("Lycanroc (#745): Midday and Midnight Formes are available in vanilla Sun/Moon, but Dusk Form is NOT (it's Ultra Sun/Ultra Moon-exclusive, via a special Own-Tempo Rockruff). Regression test for a real bug: Bulbapedia's area text reads \"Unobtainable ('''Dusk Form''')\" for the Sun/Moon entry — a per-segment marker the parser never checked, so Dusk Form was incorrectly inheriting Sun/Moon availability from the same multi-form cell", async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const lycanroc = (formId: number) => rows.filter((r) => r.pokemon_id === 745 && r.form_id === formId);
+  const dusk = lycanroc(2);
+  assert.ok(dusk.length > 0, "expected Dusk Lycanroc to have some availability (USUM/SV/SwSh)");
+  assert.ok(dusk.every((r) => r.game !== "gen7_sm"), "expected no gen7_sm (vanilla Sun/Moon) row for Dusk Lycanroc");
+  assert.ok(dusk.some((r) => r.game === "gen7_usum"), "expected a gen7_usum row for Dusk Lycanroc");
+  for (const formId of [0, 1]) {
+    assert.ok(lycanroc(formId).some((r) => r.game === "gen7_sm"), `expected a gen7_sm row for Lycanroc form_id ${formId} (Midday/Midnight)`);
+  }
+});
+
+test("Alolan Vulpix (#37) has no Brilliant Diamond/Shining Pearl availability — confirmed via Bulbapedia's own wikitext (\"Unobtainable ('''Alolan Form''')\" inline in the Shining Pearl cell, alongside Kantonian Vulpix's real Grand Underground availability in the same multi-form cell). Same root-cause regression as the Lycanroc test above, different species", async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const alolan = pokemon.find((p) => p.id === 37 && p.form_name === "Alolan");
+  assert.ok(alolan, "expected an Alolan Vulpix row in pokemon.json");
+  const alolanRows = rows.filter((r) => r.pokemon_id === 37 && r.form_id === alolan!.form_id);
+  assert.ok(alolanRows.every((r) => r.game !== "bdsp"), "expected no bdsp row for Alolan Vulpix");
+  const baseRows = rows.filter((r) => r.pokemon_id === 37 && r.form_id === 0);
+  assert.ok(baseRows.some((r) => r.game === "bdsp"), "expected Kantonian Vulpix to keep its own real BDSP availability");
+});
+
+test("Urshifu's Single Strike (form 0) and Rapid Strike (form 1) styles share IDENTICAL availability across every game — confirmed via direct wikitext fetch that Bulbapedia's Game-locations table never disambiguates between styles at all (one generic \"Evolve Kubfu\" entry covers both), so CONCURRENT_UNDISAMBIGUATED_SPECIES applies the same fact to every tracked variety rather than defaulting to the base form only (which would incorrectly drop Rapid Strike entirely)", async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const single = rows.filter((r) => r.pokemon_id === 892 && r.form_id === 0).map((r) => `${r.game}:${r.method}`).sort();
+  const rapid = rows.filter((r) => r.pokemon_id === 892 && r.form_id === 1).map((r) => `${r.game}:${r.method}`).sort();
+  assert.deepEqual(single, rapid, "expected identical (game, method) availability for both Urshifu styles");
+});
+
+test("Urshifu is fully Shiny-locked in both SwSh and SV for BOTH styles, not just Single Strike — regression test for a real bug: Bulbapedia's own shiny-lock list also never disambiguates Urshifu's styles (formName: null), and resolveLockedGames originally defaulted an unannotated lock to formId 0 only, leaving Rapid Strike (form_id 1) incorrectly shiny-huntable while Single Strike was correctly locked", async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const urshifuRows = rows.filter((r) => r.pokemon_id === 892);
+  assert.equal(urshifuRows.length, 0, "expected zero shiny_methods rows for Urshifu in any form (fully locked in every game it's available in)");
+});
+
+test("Shellos/Gastrodon (#422/#423) stay deferred — only 1 tracked variety each, not split into West/East Sea forms — a deliberate, documented scope decision: PokéAPI models their forms as sprite-only pokemon-form resources (no separate stat block) attached to a single species variety, structurally incompatible with this pipeline's per-variety form-detection mechanism, unlike every other Group A species which has its own real stat-bearing PokéAPI variety", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const shellos = pokemon.filter((p) => p.id === 422);
+  const gastrodon = pokemon.filter((p) => p.id === 423);
+  assert.equal(shellos.length, 1, "expected Shellos to stay a single tracked variety (deferred, not silently dropped)");
+  assert.equal(gastrodon.length, 1, "expected Gastrodon to stay a single tracked variety (deferred, not silently dropped)");
+});
+
+test("Primal Groudon and Primal Kyogre have their own real, boosted cosmetic_forms stat/type data (Groudon gains the Fire type, both get a large Attack boost) — confirmed via Bulbapedia's \"temporarily... in battle\" wording that Primal Reversion reverts outside battle, so it's modeled as cosmetic_forms, not a real pokemon row, unlike Crowned Zacian above", async () => {
+  const forms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const primalGroudon = forms.find((f) => f.pokemon_id === 383 && f.kind === "primal");
+  const primalKyogre = forms.find((f) => f.pokemon_id === 382 && f.kind === "primal");
+  assert.ok(primalGroudon, "expected a primal cosmetic form for Groudon");
+  assert.ok(primalKyogre, "expected a primal cosmetic form for Kyogre");
+  assert.deepEqual(JSON.parse(primalGroudon!.types).sort(), ["fire", "ground"]);
+  assert.equal(primalGroudon!.stat_attack, 396);
+  assert.equal(primalKyogre!.stat_attack, 336);
+});
+
+test("Eternamax Eternatus (#890) has zero cosmetic_forms rows at all, not even a battle-only one — confirmed via Bulbapedia's own description that it's explicitly \"unobtainable\" outside one fixed story battle, the one form this audit excludes entirely rather than modeling as cosmetic", async () => {
+  const forms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const eternatusForms = forms.filter((f) => f.pokemon_id === 890);
+  assert.ok(eternatusForms.every((f) => f.kind !== "eternamax"), "expected no eternamax cosmetic form for Eternatus");
+});
+
+test("Busted Mimikyu (#778) and Noice Eiscue (#875) are tracked as cosmetic_forms — resolved open question from this audit's plan: both species' own \"Form data\" wikitext sections explicitly confirm they always revert to Disguised/Ice Face outside of battle, settling the ambiguity the general form-differences page left open", async () => {
+  const forms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const busted = forms.find((f) => f.pokemon_id === 778 && f.kind === "busted");
+  const noice = forms.find((f) => f.pokemon_id === 875 && f.kind === "noice");
+  assert.ok(busted, "expected a busted cosmetic form for Mimikyu");
+  assert.ok(noice, "expected a noice cosmetic form for Eiscue");
+});
+
+test("Galarian Darmanitan's own Zen Mode cosmetic form (kind \"galar-zen\") attaches to form_id 1 (Galarian), not form_id 0 (Kantonian) — regression test for a real bug: cosmeticFormKind's broadened is_battle_only catch-all started producing this row for the first time this round, but baseFormId was unconditionally hardcoded to 0 (correct for Mega/Gmax, which never pair with a regional form, but wrong here), so Kantonian Darmanitan incorrectly showed Galarian's Zen Mode and Galarian Darmanitan showed none of its own", async () => {
+  const forms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const kantonianZen = forms.find((f) => f.pokemon_id === 555 && f.kind === "zen");
+  const galarianZen = forms.find((f) => f.pokemon_id === 555 && f.kind === "galar-zen");
+  assert.ok(kantonianZen, "expected a zen cosmetic form for Darmanitan");
+  assert.ok(galarianZen, "expected a galar-zen cosmetic form for Darmanitan");
+  assert.equal(kantonianZen!.form_id, 0, "expected base Zen Mode to attach to Kantonian (form_id 0)");
+  assert.equal(galarianZen!.form_id, 1, "expected Galarian Zen Mode to attach to Galarian Darmanitan (form_id 1), not the base form");
+});

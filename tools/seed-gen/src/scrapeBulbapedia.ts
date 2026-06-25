@@ -99,40 +99,75 @@ export interface AvailabilityOutput {
 }
 
 /**
- * Resolves one `'''...'''`-bolded form annotation (e.g. "Galarian Form",
- * "Kantonian Form", or Tauros's "Paldean Form (Combat Breed)"/"Paldean Form
- * (Combat and Blaze Breeds)") to the variety/varieties it refers to.
+ * Bulbapedia's own colloquial size words for Pumpkaboo/Gourgeist don't match
+ * PokéAPI's form_name-derived labels ("Average") this pipeline tracks —
+ * confirmed live on Pumpkaboo's actual Game-locations wikitext ("Medium/
+ * Small Varieties", "Large/Jumbo Varieties"). A small, explicit, cited
+ * synonym table — the same kind of hand-maintained classification rule
+ * REGIONAL_ADJECTIVES/GROUP_A_FORM_NAMES already are, not "data."
+ */
+const ANNOTATION_NAME_SYNONYMS: Record<string, string> = {
+  medium: "average",
+  jumbo: "super",
+};
+
+/**
+ * Resolves one `'''...'''`-bolded form annotation to the variety/varieties
+ * it refers to. Confirmed live against real wikitext that the trailing
+ * qualifier word varies by species — "Form"/"Forms" (most regional forms,
+ * Lycanroc's "Midday/Midnight Forms"), "Cloak"/"Cloaks" (Wormadam), "Size"/
+ * "Sizes"/"Variety"/"Varieties" (Pumpkaboo/Gourgeist) — and that some
+ * annotations have no qualifier word at all (Indeedee/Basculegion/Meowstic/
+ * Oinkologne's bare "Male"/"Female"). An optional trailing parenthetical
+ * (Tauros's breed qualifier) is stripped before extracting the qualifier
+ * word, but kept available (via the original `boldText`) for the
+ * breed-disambiguation fallback below.
  *
- * Most species have at most one variety per region adjective, so matching
- * the adjective alone is enough. Paldean Tauros is the one species (so far)
- * where three varieties share the same adjective ("Paldean") and are
- * disambiguated only by a breed qualifier in parens — handled by checking
- * which candidate's displayName (e.g. "Paldean Tauros (Combat Breed)")
- * mentions a breed word also present in the annotation's parenthetical.
+ * Slash-separated combined names (Lycanroc's "Midday/Midnight Forms") are
+ * resolved to multiple formIds from one annotation, OR-merged the same way
+ * every other multi-source signal in this file already is. Any individual
+ * name that doesn't match a tracked variety's formName — most commonly the
+ * species' own default/base variety, which this pipeline never assigns an
+ * explicit formName to by design (e.g. "Midday" for Lycanroc, "Kantonian"/
+ * "Johtonian" origin labels, Pumpkaboo's "Average" colloquially spelled
+ * "Medium") — safely defaults to the base form (formId 0) rather than being
+ * dropped, the same safe-default convention this project's regional-form
+ * fix already established.
  */
 function resolveAnnotation(
   boldText: string,
   varieties: FetchedVariety[],
 ): number[] {
-  const adjective = boldText.match(/^([A-Za-z]+) Form/)?.[1];
-  if (!adjective) return [0]; // not a region-form annotation at all — treat as the base form
+  const withoutParen = boldText.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  const qualifierMatch = withoutParen.match(/^(.+?)\s+(?:Forms?|Cloaks?|Variet(?:y|ies)|Sizes?)$/i);
+  const namesText = qualifierMatch ? qualifierMatch[1] : withoutParen;
+  if (!namesText) return [0]; // not a recognizable annotation at all — treat as the base form
+  if (namesText.toLowerCase() === "all") return varieties.map((v) => v.formId); // "All Forms"/"All Sizes"
 
-  const candidates = varieties.filter(
-    (v) => v.formName?.toLowerCase() === adjective.toLowerCase(),
-  );
-  if (candidates.length === 0) return [0]; // e.g. "Kantonian"/"Johtonian" — origin label for the untracked base form
-  if (candidates.length === 1) return [candidates[0].formId];
-
-  const breedMatches = candidates.filter((v) => {
-    const breedWord = v.displayName.match(/\(([^)]+)\)/)?.[1]?.split(" ")[0];
-    return breedWord && boldText.includes(breedWord);
+  const names = namesText.split("/").map((n) => {
+    const normalized = n.trim().toLowerCase();
+    return ANNOTATION_NAME_SYNONYMS[normalized] ?? normalized;
   });
-  // Can't disambiguate which of the shared-adjective varieties this refers
-  // to (e.g. a generic "Paldean Form" with no breed parenthetical) — apply
-  // to all of them rather than guessing one.
-  return breedMatches.length > 0
-    ? breedMatches.map((v) => v.formId)
-    : candidates.map((v) => v.formId);
+  const formIds = new Set<number>();
+  for (const name of names) {
+    const candidates = varieties.filter((v) => v.formName?.toLowerCase() === name);
+    if (candidates.length === 0) {
+      formIds.add(0); // unmatched — almost always the species' own untracked default variety
+    } else if (candidates.length === 1) {
+      formIds.add(candidates[0].formId);
+    } else {
+      // Multiple varieties share this name (Paldean Tauros's 3 breeds all
+      // have formName "Paldean") — disambiguate via a breed qualifier in
+      // the original boldText's parenthetical, same as before.
+      const breedMatches = candidates.filter((v) => {
+        const breedWord = v.displayName.match(/\(([^)]+)\)/)?.[1]?.split(" ")[0];
+        return breedWord && boldText.includes(breedWord);
+      });
+      const resolved = breedMatches.length > 0 ? breedMatches : candidates;
+      for (const v of resolved) formIds.add(v.formId);
+    }
+  }
+  return Array.from(formIds);
 }
 
 /**
@@ -246,9 +281,24 @@ function isChainableArea(areaText: string): boolean {
   return segments.some((s) => isChainableSegment(s));
 }
 
+/**
+ * Species confirmed to have zero Bulbapedia bold-annotation disambiguation
+ * between their tracked forms ANYWHERE on their Game-locations page —
+ * verified live for both (Urshifu: "area=[[Evolution|Evolve]] {{p|Kubfu}}",
+ * one generic entry covering both styles; Oinkologne: zero bold annotations
+ * found anywhere on the page). This is NOT the regional-form-introduced-
+ * later bug already fixed (`!sawAnnotation` defaulting to formId 0 only) —
+ * these species' forms are introduced *concurrently*, never one before the
+ * other (both Urshifu styles exist in every game Urshifu exists in at all;
+ * Oinkologne's gender split exists from its own release), so applying the
+ * same availability to every tracked variety is correct here, not a guess.
+ */
+export const CONCURRENT_UNDISAMBIGUATED_SPECIES = new Set(["urshifu", "oinkologne"]);
+
 function resolveFormIdsAndWildness(
   areaText: string,
   varieties: FetchedVariety[],
+  speciesName: string,
 ): { formIds: number[]; wildByFormId: Map<number, boolean>; chainableByFormId: Map<number, boolean> } {
   if (varieties.length <= 1) {
     const formId = varieties[0]?.formId ?? 0;
@@ -278,6 +328,22 @@ function resolveFormIdsAndWildness(
     const matches = [...segment.matchAll(/'''([^']+)'''/g)];
     if (matches.length > 0) {
       sawAnnotation = true;
+      // A bold-annotated segment whose only non-annotation text is literally
+      // "Unobtainable" (verified live: 69+ occurrences across cached pages —
+      // Vulpix/Sandshrew/Articuno/Marowak/Mr. Mime/Slowbro/Lycanroc/etc., e.g.
+      // "Unobtainable <small>('''Alolan Form''')</small>") means this SPECIFIC
+      // form is explicitly NOT obtainable in this entry's version, even though
+      // the cell as a whole is a plain (non-/None) Availability/Entry call —
+      // this file's own header comment already documents this exact Vulpix
+      // case but the code never actually checked for it until this fix. Skip
+      // the form entirely rather than letting its bold annotation register it
+      // as available, but still count this as "saw a real annotation" so the
+      // all-unannotated fallback below isn't mistakenly triggered.
+      const remainder = segment
+        .replace(/<small>.*?<\/small>/gi, "")
+        .replace(/'''[^']+'''/g, "")
+        .trim();
+      if (/^unobtainable$/i.test(remainder)) continue;
       for (const match of matches) {
         for (const formId of resolveAnnotation(match[1], varieties)) {
           annotatedFormIds.push(formId);
@@ -315,6 +381,13 @@ function resolveFormIdsAndWildness(
     // case below (formId 0), just for the all-unannotated case.
     const wild = isWildArea(areaText);
     const chainable = isChainableArea(areaText);
+    if (CONCURRENT_UNDISAMBIGUATED_SPECIES.has(speciesName)) {
+      return {
+        formIds: varieties.map((v) => v.formId),
+        wildByFormId: new Map(varieties.map((v) => [v.formId, wild])),
+        chainableByFormId: new Map(varieties.map((v) => [v.formId, chainable])),
+      };
+    }
     return {
       formIds: [0],
       wildByFormId: new Map([[0, wild]]),
@@ -333,6 +406,7 @@ function resolveFormIdsAndWildness(
 export function parseAvailability(
   wikitext: string,
   varieties: FetchedVariety[],
+  speciesName: string,
 ): Array<{ game: Game; formId: number; isWild: boolean; isChainable: boolean }> {
   const mainSection = wikitext.split("{{Availability/Footer}}")[0];
   const calls = findTemplateCalls(mainSection, "Availability/Entry");
@@ -349,6 +423,7 @@ export function parseAvailability(
     const { formIds, wildByFormId, chainableByFormId } = resolveFormIdsAndWildness(
       params.area ?? "",
       varieties,
+      speciesName,
     );
 
     for (const label of versionLabels) {
@@ -384,7 +459,7 @@ async function scrapeOneSpecies(
   );
   if (!section) return { facts: [] };
 
-  const hits = parseAvailability(section.wikitext, species.varieties);
+  const hits = parseAvailability(section.wikitext, species.varieties, species.name);
   const byKey = new Map<string, AvailabilityFact>();
   for (const hit of hits) {
     const key = `${hit.formId}:${hit.game}`;

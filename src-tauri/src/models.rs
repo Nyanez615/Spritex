@@ -332,11 +332,15 @@ pub struct ShinyMethod {
     pub notes: Option<String>,
 }
 
-/// Mega Evolution / Gigantamax — cosmetic battle forms, not distinct dex
-/// entries (Mega reverts after battle; Gmax doesn't change shininess), so
-/// these never get their own `shiny_methods` rows. `kind` is stringly-typed
-/// (not an enum) since it's purely display, with a tiny fixed set ("mega",
-/// "mega_x", "mega_y", "gmax") that nothing filters/queries on the way
+/// Battle-only/contextual cosmetic forms — Mega Evolution, Gigantamax, and
+/// (since the form-tracking audit) every other form confirmed to revert the
+/// instant you leave its triggering context (Zen Mode, Primal Reversion,
+/// Blade Aegislash, Busted Mimikyu, ...). Not distinct dex entries (none of
+/// these change shininess or persist in storage), so they never get their
+/// own `shiny_methods` rows. `kind` is stringly-typed (not an enum) since
+/// it's purely display, with a wide and growing set of values (one per
+/// distinct cosmetic transformation — "mega", "mega_x", "mega_y", "gmax",
+/// "zen", "primal", "busted", ...) that nothing filters/queries on the way
 /// Game/Method do.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
