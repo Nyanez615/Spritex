@@ -131,6 +131,17 @@ export const BULBAPEDIA_LABEL_TO_GAMES: Record<string, Game[]> = {
   Scarlet: ["sv"],
   Violet: ["sv"],
   "The Hidden Treasure of Area Zero": ["sv"],
+  // Some species' DLC encounter locations genuinely differ by version, so
+  // Bulbapedia splits the one shared label above into two separately-
+  // labeled calls instead — confirmed live on Vulpix/Ninetales (19 cached
+  // pages use this split) — missing these silently dropped all SV
+  // availability for those species (BULBAPEDIA_LABEL_TO_GAMES[label] was
+  // undefined, so parseAvailability's `if (!games) continue;` skipped the
+  // whole entry). Both resolve to the same "sv" Game value as the unsuffixed
+  // label — SV is one merged enum value regardless of which version a given
+  // encounter is specific to.
+  "The Hidden Treasure of Area Zero (Scarlet)": ["sv"],
+  "The Hidden Treasure of Area Zero (Violet)": ["sv"],
   "The Teal Mask": ["sv"],
   "The Indigo Disk": ["sv"],
   "Legends: Z-A": ["legends_za"],

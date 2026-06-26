@@ -11,4 +11,10 @@ boost_requirements: string, is_best_method: boolean,
  * True unless the underlying availability is gift/static/trade/evolution/hatch-only —
  * drives the frontend's acquisition-method label for the baseline `wild` method row.
  */
-is_wild_encounter: boolean, requires_transfer: boolean, transfer_chain: string | null, citation_url: string, notes: string | null, };
+is_wild_encounter: boolean, 
+/**
+ * The specific non-wild reason ("gift", "trade", "evolution", "hatch") — only
+ * meaningful when `is_wild_encounter` is false. Stringly-typed like `CosmeticForm.kind`,
+ * purely for display — nothing in Rust filters/queries on it.
+ */
+acquisition_method: string | null, requires_transfer: boolean, transfer_chain: string | null, citation_url: string, notes: string | null, };

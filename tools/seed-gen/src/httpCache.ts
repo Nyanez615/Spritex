@@ -8,8 +8,21 @@ export const OUT_ROOT = path.join(HERE, "..", "out");
 
 const USER_AGENT = "SpritexSeedGen/0.1 (unofficial fan project; https://github.com/Nyanez615/Spritex)";
 
+/**
+ * Confirmed real bug found during the first-50-species audit: the generic
+ * fallback below collapses BOTH ♀ (U+2640) and ♂ (U+2642) to the same "_",
+ * so "Nidoran♀ (Pokémon)" and "Nidoran♂ (Pokémon)" — the only two species in
+ * the dataset whose canonical names differ ONLY by gender symbol — sanitized
+ * to the identical cache filename. Nidoran♂'s own page was never actually
+ * fetched; every one of its shiny_methods rows was silently a byte-for-byte
+ * copy of Nidoran♀'s. Substituting distinct ASCII tokens before the generic
+ * fallback runs fixes this pair and any future case with the same shape.
+ */
 function sanitizeKey(key: string): string {
-  return key.replace(/[^a-zA-Z0-9_.-]/g, "_");
+  return key
+    .replace(/♀/g, "-female")
+    .replace(/♂/g, "-male")
+    .replace(/[^a-zA-Z0-9_.-]/g, "_");
 }
 
 async function readCache<T>(file: string): Promise<T | undefined> {

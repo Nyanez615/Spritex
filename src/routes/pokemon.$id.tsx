@@ -97,6 +97,7 @@ import {
   type CollectionEntry,
   type CollectionStatus,
   type CosmeticForm,
+  type EvolutionChainMember,
   type Pokemon,
   type ShinyMethod,
 } from "@/lib/tauri";
@@ -173,63 +174,96 @@ function PokemonNavButton({
  * entirely when the chain has nothing but the current species (no evolution
  * line at all).
  */
-function EvolutionLineNav({
+/** Groups consecutive same-stage members together — the chain arrives pre-sorted by stage, so this is just a split, not a sort. */
+export function groupByStage(
+  chain: EvolutionChainMember[],
+): EvolutionChainMember[][] {
+  const groups: EvolutionChainMember[][] = [];
+  for (const member of chain) {
+    const lastGroup = groups[groups.length - 1];
+    if (lastGroup && lastGroup[0].stage === member.stage) {
+      lastGroup.push(member);
+    } else {
+      groups.push([member]);
+    }
+  }
+  return groups;
+}
+
+export function EvolutionLineNav({
   chain,
   current,
   searchContext,
 }: {
-  chain: Pokemon[];
+  chain: EvolutionChainMember[];
   current: Pokemon;
   searchContext: Required<PokedexSearch>;
 }) {
+  // Grouping by stage (not rendering the whole family as one flat row) is
+  // what actually fixes the reported confusion: two parallel single-step
+  // lines (Rattata/Alolan Rattata -> Raticate/Alolan Raticate) or a branch
+  // (Gloom -> Vileplume, Bellossom) used to render as one undifferentiated
+  // row that read like a single bad chain — confirmed via direct query that
+  // the underlying stage data was always correct, only the rendering wasn't.
+  const stageGroups = useMemo(() => groupByStage(chain), [chain]);
   return (
     <div>
       <h2 className="text-sm font-semibold text-foreground mb-3">
         Evolution Line
       </h2>
-      <div className="flex gap-2 flex-wrap">
-        {chain.map((member) => {
-          const isCurrent =
-            member.id === current.id && member.form_id === current.form_id;
-          if (isCurrent) {
-            return (
-              <Badge
-                key={`${member.id}-${member.form_id}`}
-                variant="outline"
-                className="flex items-center gap-1.5 px-2 py-1 text-sm font-normal"
-              >
-                <img
-                  src={member.sprite_url}
-                  alt={member.display_name}
-                  className="size-6"
-                />
-                {member.display_name}
-              </Badge>
-            );
-          }
-          return (
-            <Button
-              key={`${member.id}-${member.form_id}`}
-              asChild
-              variant="outline"
-              size="sm"
-            >
-              <Link
-                to="/pokemon/$id"
-                params={{ id: String(member.id) }}
-                search={{ ...searchContext, form: member.form_id }}
-                className="flex items-center gap-1.5"
-              >
-                <img
-                  src={member.sprite_url}
-                  alt={member.display_name}
-                  className="size-6"
-                />
-                {member.display_name}
-              </Link>
-            </Button>
-          );
-        })}
+      <div className="flex items-center gap-2 flex-wrap">
+        {stageGroups.map((group, groupIndex) => (
+          <div key={group[0].stage} className="flex items-center gap-2">
+            {groupIndex > 0 && (
+              <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+            )}
+            <div className="flex gap-2 flex-wrap">
+              {group.map(({ pokemon: member }) => {
+                const isCurrent =
+                  member.id === current.id &&
+                  member.form_id === current.form_id;
+                if (isCurrent) {
+                  return (
+                    <Badge
+                      key={`${member.id}-${member.form_id}`}
+                      variant="outline"
+                      className="flex items-center gap-1.5 px-2 py-1 text-sm font-normal"
+                    >
+                      <img
+                        src={member.sprite_url}
+                        alt={member.display_name}
+                        className="size-6"
+                      />
+                      {member.display_name}
+                    </Badge>
+                  );
+                }
+                return (
+                  <Button
+                    key={`${member.id}-${member.form_id}`}
+                    asChild
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Link
+                      to="/pokemon/$id"
+                      params={{ id: String(member.id) }}
+                      search={{ ...searchContext, form: member.form_id }}
+                      className="flex items-center gap-1.5"
+                    >
+                      <img
+                        src={member.sprite_url}
+                        alt={member.display_name}
+                        className="size-6"
+                      />
+                      {member.display_name}
+                    </Link>
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -858,7 +892,7 @@ function GenderRatioBar({ rate }: { rate: number }) {
   );
 }
 
-function ProfileSection({
+export function ProfileSection({
   pokemon,
   types,
   cosmeticForms,
@@ -937,7 +971,16 @@ function ProfileSection({
           {pokemon.base_happiness}
         </ProfileField>
         <ProfileField label="Hatch Time">
-          {pokemon.hatch_steps} steps ({pokemon.hatch_steps / 255} cycles)
+          {/* hatch_steps is a real PokéAPI value even for No-Eggs species (the
+              game's own data table doesn't omit it), but showing a step count
+              directly contradicts the "No Eggs" field just above it. */}
+          {eggGroups.includes("no-eggs") ? (
+            "—"
+          ) : (
+            <>
+              {pokemon.hatch_steps} steps ({pokemon.hatch_steps / 255} cycles)
+            </>
+          )}
         </ProfileField>
 
         {/* Battle */}

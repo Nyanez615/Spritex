@@ -309,6 +309,18 @@ pub struct Pokemon {
     pub flavor_text: Option<String>,
 }
 
+/// One member of an evolution-line family, alongside its `stage` — the
+/// frontend's chip-row UI groups members by stage so two parallel same-depth
+/// paths (e.g. Alolan Rattata/Raticate) or a branch (e.g. Vileplume/
+/// Bellossom both reached from Gloom) render as visually distinct clusters
+/// instead of one flat, misleadingly linear-looking row.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct EvolutionChainMember {
+    pub pokemon: Pokemon,
+    pub stage: i32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ShinyMethod {
@@ -326,6 +338,10 @@ pub struct ShinyMethod {
     /// True unless the underlying availability is gift/static/trade/evolution/hatch-only —
     /// drives the frontend's acquisition-method label for the baseline `wild` method row.
     pub is_wild_encounter: bool,
+    /// The specific non-wild reason ("gift", "trade", "evolution", "hatch") — only
+    /// meaningful when `is_wild_encounter` is false. Stringly-typed like `CosmeticForm.kind`,
+    /// purely for display — nothing in Rust filters/queries on it.
+    pub acquisition_method: Option<String>,
     pub requires_transfer: bool,
     pub transfer_chain: Option<String>,
     pub citation_url: String,

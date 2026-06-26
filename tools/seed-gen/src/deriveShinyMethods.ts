@@ -60,7 +60,7 @@
 import { readOutJson, writeOutJson } from "./httpCache.js";
 import type { FetchedCosmeticForm, FetchedSpecies } from "./fetchPokeapi.js";
 import type { EvolutionChainNode } from "./fetchEvolutionChains.js";
-import { CONCURRENT_UNDISAMBIGUATED_SPECIES, type AvailabilityOutput } from "./scrapeBulbapedia.js";
+import { CONCURRENT_UNDISAMBIGUATED_SPECIES, type AcquisitionMethod, type AvailabilityOutput } from "./scrapeBulbapedia.js";
 import type { ShinyLockFact } from "./scrapeShinyLocks.js";
 import type { DynamaxAdventureFact } from "./scrapeDynamaxAdventure.js";
 import type { FriendSafariFact } from "./scrapeFriendSafari.js";
@@ -162,6 +162,8 @@ export interface ShinyMethodRow {
   is_best_method: boolean;
   /** True unless the underlying availability was gift/static/trade/evolution/hatch-only — see scrapeBulbapedia.ts's isWild. */
   is_wild_encounter: boolean;
+  /** The specific non-wild reason — only meaningful when is_wild_encounter is false. See scrapeBulbapedia.ts's AcquisitionMethod. */
+  acquisition_method: AcquisitionMethod | null;
   requires_transfer: boolean;
   transfer_chain: string | null;
   citation_url: string;
@@ -293,6 +295,13 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
   // is_wild_encounter column, which drives the frontend's acquisition-method
   // label (e.g. "Gift / Static Encounter" instead of "Wild Encounter").
   const wildLabelByForm = new Map<string, Set<Game>>();
+  // Only meaningful where wildLabelByForm says non-wild — the specific
+  // reason (gift/trade/evolution/hatch), feeding the persisted
+  // acquisition_method column so the frontend can label e.g. Venusaur's
+  // evolution-only X/Y row "Evolution (from Ivysaur)" instead of the
+  // generic, misleading "Gift / Static Encounter" every non-wild row used
+  // to get regardless of the real reason.
+  const acquisitionMethodByForm = new Map<string, Map<Game, AcquisitionMethod>>();
   for (const fact of availability) {
     if (fact.game === "go") continue; // GO deferred entirely — see scrapeBulbapedia.ts header
     const key = `${fact.pokemonId}:${fact.formId}`;
@@ -301,6 +310,9 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
     if (fact.isWild) {
       if (!wildLabelByForm.has(key)) wildLabelByForm.set(key, new Set());
       wildLabelByForm.get(key)!.add(fact.game);
+    } else if (fact.acquisitionMethod) {
+      if (!acquisitionMethodByForm.has(key)) acquisitionMethodByForm.set(key, new Map());
+      acquisitionMethodByForm.get(key)!.set(fact.game, fact.acquisitionMethod);
     }
     if (fact.isChainable) {
       if (!chainableByForm.has(key)) chainableByForm.set(key, new Set());
@@ -369,7 +381,6 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
         display_name: variety.displayName,
         form_id: variety.formId,
         form_name: variety.formName,
-        generation: s.generationNumber,
         sprite_url: variety.spriteUrl,
         shiny_sprite_url: variety.shinySpriteUrl,
         sprite_url_female: variety.spriteUrlFemale,
@@ -391,6 +402,11 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
         hatch_steps: s.hatchSteps,
         flavor_text: s.flavorText,
         // Variety-level facts — these genuinely can differ by regional form.
+        // generation lives here, not above with the species-level facts —
+        // regional/alternate forms can postdate their base species by
+        // multiple generations (Alolan Rattata: Gen 7, despite Kantonian
+        // Rattata being Gen 1), confirmed a real, previously-conflated bug.
+        generation: variety.generationNumber,
         height: variety.height,
         weight: variety.weight,
         abilities: JSON.stringify(variety.abilities),
@@ -428,8 +444,9 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
       const isInFriendSafariRoster = variety.formId === 0 && friendSafariRoster.has(s.pokemonId);
       const chainableGames = chainableByForm.get(key) ?? new Set<Game>();
       const wildLabelGames = wildLabelByForm.get(key) ?? new Set<Game>();
+      const acquisitionMethodGames = acquisitionMethodByForm.get(key) ?? new Map<Game, AcquisitionMethod>();
 
-      const candidateRows: Array<{ game: Game; method: Method; odds: OddsRow; isWildEncounter: boolean }> = [];
+      const candidateRows: Array<{ game: Game; method: Method; odds: OddsRow; isWildEncounter: boolean; acquisitionMethod: AcquisitionMethod | null }> = [];
       for (const game of available) {
         if (locked.has(game)) continue;
         const isChainable = chainableGames.has(game);
@@ -441,8 +458,15 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
         // rows too would let a future "WHERE is_wild_encounter" consumer
         // silently misread a masuda row's acquisition path.
         const isWildEncounter = wildLabelGames.has(game);
+        const acquisitionMethod = acquisitionMethodGames.get(game) ?? null;
         for (const odds of applicableMethods(game, s.isBreedable, isInDaRoster, isInFriendSafariRoster, isChainable, oddsByGame)) {
-          candidateRows.push({ game, method: odds.method, odds, isWildEncounter: odds.method === "wild" ? isWildEncounter : true });
+          candidateRows.push({
+            game,
+            method: odds.method,
+            odds,
+            isWildEncounter: odds.method === "wild" ? isWildEncounter : true,
+            acquisitionMethod: odds.method === "wild" ? acquisitionMethod : null,
+          });
         }
       }
       if (candidateRows.length === 0) continue;
@@ -464,6 +488,7 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
           boost_requirements: JSON.stringify(c.odds.boostRequirements),
           is_best_method: i === bestIndex,
           is_wild_encounter: c.isWildEncounter,
+          acquisition_method: c.acquisitionMethod,
           requires_transfer: false,
           transfer_chain: null,
           citation_url: citationUrl,

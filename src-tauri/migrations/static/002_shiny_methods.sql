@@ -10,6 +10,7 @@ CREATE TABLE shiny_methods (
     boost_requirements  TEXT    NOT NULL,
     is_best_method      INTEGER NOT NULL DEFAULT 0,
     is_wild_encounter   INTEGER NOT NULL DEFAULT 1,
+    acquisition_method  TEXT,
     requires_transfer   INTEGER NOT NULL DEFAULT 0,
     transfer_chain      TEXT,
     citation_url        TEXT    NOT NULL,

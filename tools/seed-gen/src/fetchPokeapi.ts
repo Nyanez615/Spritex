@@ -211,12 +211,27 @@ interface PokeApiForm {
   is_mega: boolean;
   form_name: string;
   names: PokeApiLocalizedName[];
+  version_group: PokeApiNamedResource;
+}
+
+interface PokeApiVersionGroup {
+  generation: PokeApiNamedResource;
 }
 
 export interface FetchedVariety {
   formId: number;
   formName: string | null;
   displayName: string;
+  /**
+   * The generation THIS variety was introduced in — NOT always the species'
+   * own generation. Regional/alternate forms can postdate their base species
+   * by multiple generations (Alolan Rattata: Gen 7, despite Kantonian
+   * Rattata being Gen 1) — confirmed live via PokéAPI's pokemon-form
+   * `version_group` field, resolved to a generation via the version-group
+   * resource's own `generation` field. Equal to the species' generation for
+   * the default variety.
+   */
+  generationNumber: number;
   /** Raw PokéAPI pokemon-resource name this variety was fetched from (e.g. "meowth-alola") — lets fetchEvolutionChains.ts resolve evolution_details' base_form/evolved_form references back to a (pokemonId, formId) pair. */
   apiPokemonName: string;
   types: string[];
@@ -543,12 +558,16 @@ async function fetchVarietyDetail(
     const formName = adjective ?? groupAName;
     if (!formName) return {}; // cosmetic-only variant (pattern/cap/season/etc.) — not modeled
 
+    const versionGroup = await limiter.run(() =>
+      cachedJson<PokeApiVersionGroup>("pokeapi-version-group", form.version_group.name, form.version_group.url),
+    );
     return {
       variety: {
         formId: formIndex,
         formName,
         displayName: formDisplayName,
         apiPokemonName: variety.pokemon.name,
+        generationNumber: generationNumberFromName(versionGroup.generation.name),
         ...shared,
       },
     };
@@ -560,6 +579,7 @@ async function fetchVarietyDetail(
       formName: null,
       displayName: fallbackDisplayName,
       apiPokemonName: variety.pokemon.name,
+      generationNumber: 0, // placeholder — the caller patches this to the species' own generation once back in scope
       ...shared,
     },
   };
@@ -588,6 +608,7 @@ export async function fetchAllSpecies(): Promise<{ species: FetchedSpecies[]; co
       const species = await limiter.run(() => cachedJson<PokeApiSpecies>("pokeapi-species", ref.name, ref.url));
       const displayName = englishName(species.names, species.name);
       const isBreedable = !species.egg_groups.some((g) => g.name === "no-eggs");
+      const speciesGenerationNumber = generationNumberFromName(species.generation.name);
 
       const varieties: FetchedVariety[] = [];
       const speciesCosmeticForms: FetchedCosmeticForm[] = [];
@@ -597,6 +618,12 @@ export async function fetchAllSpecies(): Promise<{ species: FetchedSpecies[]; co
           limiter, variety, displayName, variety.is_default ? 0 : formIndex, species.name, megaStoneMap,
         );
         if (detail) {
+          // The default variety's generation is the species' own — fetchVarietyDetail
+          // returns a placeholder for it since it has no version_group of its own to
+          // derive from (only non-default varieties do); patched here rather than
+          // threaded down as a parameter, matching this file's own established
+          // two-pass pattern for resolveCosmeticBaseFormId below.
+          if (variety.is_default) detail.generationNumber = speciesGenerationNumber;
           varieties.push(detail);
           if (!variety.is_default) formIndex++;
         }
@@ -621,7 +648,7 @@ export async function fetchAllSpecies(): Promise<{ species: FetchedSpecies[]; co
         pokemonId: species.id,
         name: species.name,
         displayName,
-        generationNumber: generationNumberFromName(species.generation.name),
+        generationNumber: speciesGenerationNumber,
         genderRate: species.gender_rate,
         hasGenderDifferences: species.has_gender_differences,
         isLegendary: species.is_legendary,

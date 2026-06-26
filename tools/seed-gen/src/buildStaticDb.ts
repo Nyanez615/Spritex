@@ -59,13 +59,13 @@ function insertPokemon(db: DatabaseSync, rows: PokemonRow[]): void {
 
 function insertShinyMethods(db: DatabaseSync, rows: ShinyMethodRow[]): void {
   const stmt = db.prepare(`
-    INSERT INTO shiny_methods (pokemon_id, form_id, game, method, odds_base, odds_charm, odds_optimized, boost_requirements, is_best_method, is_wild_encounter, requires_transfer, transfer_chain, citation_url, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO shiny_methods (pokemon_id, form_id, game, method, odds_base, odds_charm, odds_optimized, boost_requirements, is_best_method, is_wild_encounter, acquisition_method, requires_transfer, transfer_chain, citation_url, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const r of rows) {
     stmt.run(
       r.pokemon_id, r.form_id, r.game, r.method, r.odds_base, r.odds_charm, r.odds_optimized,
-      r.boost_requirements, b(r.is_best_method), b(r.is_wild_encounter), b(r.requires_transfer), r.transfer_chain, r.citation_url, r.notes
+      r.boost_requirements, b(r.is_best_method), b(r.is_wild_encounter), r.acquisition_method, b(r.requires_transfer), r.transfer_chain, r.citation_url, r.notes
     );
   }
 }

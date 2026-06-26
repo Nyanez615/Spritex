@@ -23,6 +23,7 @@ fn row_to_shiny_method(row: &Row) -> rusqlite::Result<ShinyMethod> {
         boost_requirements: row.get("boost_requirements")?,
         is_best_method: row.get::<_, i32>("is_best_method")? != 0,
         is_wild_encounter: row.get::<_, i32>("is_wild_encounter")? != 0,
+        acquisition_method: row.get("acquisition_method")?,
         requires_transfer: row.get::<_, i32>("requires_transfer")? != 0,
         transfer_chain: row.get("transfer_chain")?,
         citation_url: row.get("citation_url")?,

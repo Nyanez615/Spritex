@@ -77,6 +77,20 @@ import { ConcurrencyLimiter, readOutJson, writeOutJson } from "./httpCache.js";
 import { fetchNamedSection, pageUrl } from "./mediawikiClient.js";
 import { findTemplateCalls, parseTemplateCall } from "./wikitext.js";
 
+/**
+ * The specific non-wild reason a "wild"-method row's availability comes
+ * from — "gift" also covers Bulbapedia's "(Only one)" static encounters
+ * (confirmed empirically: both route through the identical
+ * `[[List of in-game event Pokémon...|Only one]]` catalog-link template,
+ * with no textual signal distinguishing an NPC gift from a fixed static
+ * encounter — verified directly against Bulbasaur's Sycamore-lab gift vs.
+ * the Sinnoh lake trio's lake encounters, both phrased identically aside
+ * from the preceding location/NPC-name text, which isn't a reliable
+ * person-vs-place signal to regex against). Only meaningful when
+ * `isWild` is false.
+ */
+export type AcquisitionMethod = "gift" | "trade" | "evolution" | "hatch";
+
 export interface AvailabilityFact {
   pokemonId: number;
   formId: number;
@@ -91,6 +105,8 @@ export interface AvailabilityFact {
    * is false.
    */
   isChainable: boolean;
+  /** The specific non-wild reason — see AcquisitionMethod. Undefined when isWild is true. */
+  acquisitionMethod?: AcquisitionMethod;
 }
 
 export interface AvailabilityOutput {
@@ -134,11 +150,50 @@ const ANNOTATION_NAME_SYNONYMS: Record<string, string> = {
  * dropped, the same safe-default convention this project's regional-form
  * fix already established.
  */
+/**
+ * Renders simple inline wikitext markup down to plain text — confirmed
+ * necessary live against Raticate's Sun/Moon annotation, which silently
+ * dropped Alolan Raticate's entire wild availability: the bold annotation
+ * text was literally `{{rf|Alolan}} Form` and `[[Kanto]]nian Form` (not the
+ * plain "Alolan Form"/"Kantonian Form" a reader sees rendered), so neither
+ * ever matched a tracked variety's formName and both silently fell back to
+ * formId 0. `{{Template|args}}` resolves to its LAST pipe-separated
+ * argument (confirmed live: `{{rf|Alolan}}` -> "Alolan", `{{rf|Alolan|Alolan
+ * Form}}` -> "Alolan Form" — the common Bulbapedia convention of an optional
+ * trailing display-text override, the same one `[[Link|Display]]` already
+ * uses). `[[Link]]` resolves to its target; `[[Link|Display]]` to its
+ * display text.
+ */
+function renderWikitextToPlainText(text: string): string {
+  let rendered = text;
+  // Repeat to fixed-point rather than a single pass: `[^{}]+` only ever
+  // matches the INNERMOST `{{...}}` (one with no nested braces), so a
+  // template nested inside another (`{{outer|{{inner}}}}`) needs the inner
+  // one resolved first, then the now-brace-free outer one resolved on the
+  // next iteration. No confirmed real case of this nesting exists yet in
+  // the cached corpus, but a single pass would silently leave residual
+  // markup behind for one, repeating the exact Alolan Raticate failure mode
+  // this function exists to fix. Bounded iteration count guards against a
+  // pathological/malformed input that never reaches a fixed point.
+  for (let i = 0; i < 5; i++) {
+    const next = rendered
+      .replace(/\{\{([^{}]+)\}\}/g, (_, inner: string) => {
+        const parts = inner.split("|");
+        return parts[parts.length - 1];
+      })
+      .replace(/\[\[([^[\]|]+)(?:\|([^[\]]+))?\]\]/g, (_, target: string, display?: string) => display ?? target);
+    if (next === rendered) break;
+    rendered = next;
+  }
+  return rendered;
+}
+
 function resolveAnnotation(
   boldText: string,
   varieties: FetchedVariety[],
 ): number[] {
-  const withoutParen = boldText.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  const rendered = renderWikitextToPlainText(boldText);
+  const withoutParen = rendered.replace(/\s*\([^)]*\)\s*$/, "").trim();
   const qualifierMatch = withoutParen.match(/^(.+?)\s+(?:Forms?|Cloaks?|Variet(?:y|ies)|Sizes?)$/i);
   const namesText = qualifierMatch ? qualifierMatch[1] : withoutParen;
   if (!namesText) return [0]; // not a recognizable annotation at all — treat as the base form
@@ -161,7 +216,7 @@ function resolveAnnotation(
       // the original boldText's parenthetical, same as before.
       const breedMatches = candidates.filter((v) => {
         const breedWord = v.displayName.match(/\(([^)]+)\)/)?.[1]?.split(" ")[0];
-        return breedWord && boldText.includes(breedWord);
+        return breedWord && rendered.includes(breedWord);
       });
       const resolved = breedMatches.length > 0 ? breedMatches : candidates;
       for (const v of resolved) formIds.add(v.formId);
@@ -204,17 +259,81 @@ function resolveAnnotation(
  * use that link). Don't add markers for cases not yet confirmed against a
  * real page.
  */
-const NON_WILD_MARKERS = [
-  /\[\[List of in-game event Pokémon/i, // covers both "Received" gifts and "(Only one)" statics
-  /\[\[First partner Pokémon\]\]/i, // starter-gift link, used identically across every generation
-  /\[\[Trade|Traded from/i, // explicit trade link, or plain-text "Traded from" (confirmed: Chespin X/Y)
-  /\[\[Evolution\|Evolve/i, // evolution-only path
-  /Evolve\s*\{\{p\|/i, // alt evolution-link wikitext form
-  /Hatch\s*\{\{pkmn\|Egg\}\}/i, // breeding/hatch-only — non-wild for chain-mechanic purposes
+const NON_WILD_MARKERS: Array<{ regex: RegExp; category: AcquisitionMethod }> = [
+  { regex: /\[\[List of in-game event Pokémon/i, category: "gift" }, // covers both "Received" gifts and "(Only one)" statics
+  { regex: /\[\[First partner Pokémon\]\]/i, category: "gift" }, // starter-gift link, used identically across every generation
+  { regex: /\[\[Trade|\[\[In-game trade\|Trade\]\]|Traded from/i, category: "trade" }, // explicit trade link ([[Trade...]] or the differently-titled [[In-game trade|Trade]], confirmed: Raichu's Legends: Z-A entry), or plain-text "Traded from" (confirmed: Chespin X/Y)
+  { regex: /\[\[Evolution\|Evolve/i, category: "evolution" }, // evolution-only path
+  { regex: /Evolve\s*\{\{p\|/i, category: "evolution" }, // alt evolution-link wikitext form
+  { regex: /Hatch\s*\{\{pkmn\|Egg\}\}/i, category: "hatch" }, // breeding/hatch-only — non-wild for chain-mechanic purposes
+  // "Breed {{p|OtherSpecies}}" — a pre-evolution obtainable in a given game
+  // ONLY by breeding its own evolved form and hatching the egg (no wild
+  // encounter exists at all). Missed entirely until the first-50-species
+  // audit found it on ~295 cached pages (e.g. Caterpie/Weedle/Pidgey/
+  // Rattata/Spearow/Sandshrew/Venonat/Vulpix/Zubat/Diglett all have at least
+  // one game where their only listed source is this) — confirmed two
+  // distinct wikitext forms for the same fact: the template
+  // `{{pkmn|breeding|Breed}}` (255 occurrences) and the plain wikilink
+  // `[[Pokémon breeding|Breed]]`/`[[Pokémon Breeding|Breed]]` (39
+  // occurrences, case varies). Same "hatch" category as the pre-existing
+  // generic Hatch-Egg marker — both mean "obtained by breeding," just
+  // phrased differently by Bulbapedia depending on whether a *specific*
+  // parent species is named.
+  { regex: /\{\{pkmn\|breeding\|Breed\}\}/i, category: "hatch" },
+  { regex: /\[\[Pokémon [Bb]reeding\|Breed\]\]/i, category: "hatch" },
 ];
 
+/** The matched non-wild category, or undefined if the segment is wild. */
+function nonWildCategory(segmentText: string): AcquisitionMethod | undefined {
+  return NON_WILD_MARKERS.find((m) => m.regex.test(segmentText))?.category;
+}
+
 function isWildSegment(segmentText: string): boolean {
-  return !NON_WILD_MARKERS.some((re) => re.test(segmentText));
+  return nonWildCategory(segmentText) === undefined;
+}
+
+/**
+ * A bold-annotated segment whose only non-annotation text is one of these
+ * exact markers means that SPECIFIC form has no real native source in this
+ * entry's version, even though the cell as a whole is a plain (non-/None)
+ * Availability/Entry call (because some OTHER bold-annotated form in the
+ * same cell does have one). "Unobtainable" means explicitly impossible;
+ * the rest are one-way, no-new-shiny-roll transfer mechanisms — the same
+ * "no new roll happens there" principle gameMap.ts's BULBAPEDIA_LABEL_TO_GAMES
+ * already applies to the dedicated "v=Pal Park" pseudo-version, just for
+ * when the equivalent fact instead shows up INLINE in an otherwise-real
+ * entry's area= text. Confirmed live: Raichu's SV entry reads "{{g|HOME}}
+ * ('''Alolan Form''')" while a real Kantonian-Form Tera Raid segment shares
+ * the same cell; Sandshrew/Sandslash/Vulpix/Ninetales/Diglett's Gen 7
+ * entries read "[[Pokémon Bank]] ('''Kantonian Form''')" in the exact same
+ * shape "Unobtainable" already needed special-casing for — found during the
+ * first-50-species audit, the same root-cause class as that earlier fix.
+ * "Poké Portal News" is the same category by a different name — confirmed
+ * live it's always either its own dedicated `====In events====` subsection
+ * (date-windowed Tera Raid spotlights, e.g. "October 3 to 12, 2025") or, when
+ * mentioned inline like this, a reference to that same one-time, time-
+ * limited event mechanism — not a repeatable native encounter, matching this
+ * project's existing "event distributions ... can't grind shiny odds
+ * against" exclusion already applied at the section level.
+ *
+ * A remainder can combine more than one of these with a comma (confirmed:
+ * Raichu's Area Zero DLC entry reads "{{g|HOME}}, [[Poké Portal News]]" for
+ * its Alolan Form segment) — checked per comma-separated part, not as one
+ * exact whole-string match, so combinations are recognized too.
+ */
+const NO_NATIVE_AVAILABILITY_MARKERS = [
+  /^unobtainable$/i,
+  /^\[\[Pokémon Bank\]\]$/i,
+  /^\{\{g\|HOME\}\}$/i,
+  /^\[\[Poké Transfer\]\]$/i,
+  /^\[\[Pal Park\]\]$/i,
+  /^\[\[#?Poké Portal News(\|[^[\]]*)?\]\]$/i,
+];
+
+/** True if every comma-separated part of the remainder is a recognized non-native-availability marker (or the remainder is empty/whitespace-only, which the existing single-marker check already covers via the caller's own logic). */
+function isNoNativeAvailabilityRemainder(remainder: string): boolean {
+  const parts = remainder.split(",").map((p) => p.trim()).filter((p) => p.length > 0);
+  return parts.length > 0 && parts.every((part) => NO_NATIVE_AVAILABILITY_MARKERS.some((re) => re.test(part)));
 }
 
 /**
@@ -239,10 +358,19 @@ function isWildSegment(segmentText: string): boolean {
  *   starter-gift segment with a genuinely separate Grand Underground wild
  *   segment — correctly wild (the species really is repeatably catchable
  *   there), but incorrectly granted Chain Radar before this marker existed.
+ * - Max Lair (Dynamax Adventure, SwSh's Crown Tundra): a den/rental-battle
+ *   roster mechanic, not a tall-grass encounter — same reasoning as Friend
+ *   Safari/Grand Underground above. Found during the first-50-species audit
+ *   (Raichu/Sandslash's Expansion Pass entries): mentioned inline in area=
+ *   text independently of the separate scrapeDynamaxAdventure.ts roster file
+ *   (which already derives its own correct `dynamax_adventure` method row),
+ *   so left unmarked this was incorrectly granting Brilliant Pokémon to a
+ *   den-only path.
  */
 const NON_CHAINABLE_MARKERS = [
   /Friend Safari/i,
   /Grand Underground/i,
+  /\[\[Max Lair\]\] \(\[\[Dynamax Adventure\]\]\)/i,
 ];
 
 /** Chainable implies wild — callers that already know a segment's wildness should pass it in rather than have this recompute isWildSegment. */
@@ -269,6 +397,26 @@ function isWildArea(areaText: string): boolean {
     .filter((s) => s.length > 0);
   if (segments.length === 0) return isWildSegment(areaText); // defensive fallback, shouldn't occur in practice
   return segments.some(isWildSegment);
+}
+
+/**
+ * The acquisition category when the WHOLE area is non-wild (every segment
+ * non-wild) — meaningless when isWildArea is true. If segments disagree on
+ * category (no confirmed real case yet — verify against real data, don't
+ * assume), the first segment's category wins, document-order, the same
+ * "first match wins" choice nonWildCategory already makes within one segment.
+ */
+function acquisitionMethodArea(areaText: string): AcquisitionMethod | undefined {
+  const segments = areaText
+    .split(/<br\s*\/?>/i)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (segments.length === 0) return nonWildCategory(areaText);
+  for (const segment of segments) {
+    const category = nonWildCategory(segment);
+    if (category) return category;
+  }
+  return undefined;
 }
 
 /** Same OR-merge as isWildArea, but for the (stricter) chainable predicate. */
@@ -299,13 +447,19 @@ function resolveFormIdsAndWildness(
   areaText: string,
   varieties: FetchedVariety[],
   speciesName: string,
-): { formIds: number[]; wildByFormId: Map<number, boolean>; chainableByFormId: Map<number, boolean> } {
+): {
+  formIds: number[];
+  wildByFormId: Map<number, boolean>;
+  chainableByFormId: Map<number, boolean>;
+  acquisitionMethodByFormId: Map<number, AcquisitionMethod | undefined>;
+} {
   if (varieties.length <= 1) {
     const formId = varieties[0]?.formId ?? 0;
     return {
       formIds: [formId],
       wildByFormId: new Map([[formId, isWildArea(areaText)]]),
       chainableByFormId: new Map([[formId, isChainableArea(areaText)]]),
+      acquisitionMethodByFormId: new Map([[formId, acquisitionMethodArea(areaText)]]),
     };
   }
 
@@ -313,14 +467,17 @@ function resolveFormIdsAndWildness(
   const annotatedFormIds: number[] = [];
   const wildByFormId = new Map<number, boolean>();
   const chainableByFormId = new Map<number, boolean>();
+  const acquisitionMethodByFormId = new Map<number, AcquisitionMethod | undefined>();
   let sawAnnotation = false;
   let sawUnannotatedContent = false;
   let unannotatedWild = false;
   let unannotatedChainable = false;
+  let unannotatedAcquisitionMethod: AcquisitionMethod | undefined;
 
   for (const segment of segments) {
     const segmentWild = isWildSegment(segment);
     const segmentChainable = isChainableSegment(segment, segmentWild);
+    const segmentAcquisitionMethod = nonWildCategory(segment);
     // matchAll, not match: a segment can carry more than one bold form
     // annotation without a <br> between them (no real example yet, but
     // nothing in the wikitext convention rules it out) — match() alone
@@ -328,22 +485,19 @@ function resolveFormIdsAndWildness(
     const matches = [...segment.matchAll(/'''([^']+)'''/g)];
     if (matches.length > 0) {
       sawAnnotation = true;
-      // A bold-annotated segment whose only non-annotation text is literally
-      // "Unobtainable" (verified live: 69+ occurrences across cached pages —
-      // Vulpix/Sandshrew/Articuno/Marowak/Mr. Mime/Slowbro/Lycanroc/etc., e.g.
-      // "Unobtainable <small>('''Alolan Form''')</small>") means this SPECIFIC
-      // form is explicitly NOT obtainable in this entry's version, even though
-      // the cell as a whole is a plain (non-/None) Availability/Entry call —
-      // this file's own header comment already documents this exact Vulpix
-      // case but the code never actually checked for it until this fix. Skip
-      // the form entirely rather than letting its bold annotation register it
-      // as available, but still count this as "saw a real annotation" so the
-      // all-unannotated fallback below isn't mistakenly triggered.
+      // A bold-annotated segment whose only non-annotation text is one of
+      // NO_NATIVE_AVAILABILITY_MARKERS means this SPECIFIC form has no real
+      // in-game source in this entry's version, even though the cell as a
+      // whole is a plain (non-/None) Availability/Entry call because a
+      // DIFFERENT bold-annotated form in the same cell does have one — skip
+      // the form entirely rather than letting its bold annotation register
+      // it as available, but still count this as "saw a real annotation" so
+      // the all-unannotated fallback below isn't mistakenly triggered.
       const remainder = segment
         .replace(/<small>.*?<\/small>/gi, "")
         .replace(/'''[^']+'''/g, "")
         .trim();
-      if (/^unobtainable$/i.test(remainder)) continue;
+      if (isNoNativeAvailabilityRemainder(remainder)) continue;
       for (const match of matches) {
         for (const formId of resolveAnnotation(match[1], varieties)) {
           annotatedFormIds.push(formId);
@@ -357,6 +511,12 @@ function resolveFormIdsAndWildness(
             formId,
             (chainableByFormId.get(formId) ?? false) || segmentChainable,
           );
+          // First non-wild category wins if segments disagree — no confirmed
+          // real case of disagreement yet, verify against real data rather
+          // than assume; this keeps it deterministic in the meantime.
+          if (!acquisitionMethodByFormId.get(formId)) {
+            acquisitionMethodByFormId.set(formId, segmentAcquisitionMethod);
+          }
         }
       }
     } else if (segment.trim().length > 0) {
@@ -365,6 +525,7 @@ function resolveFormIdsAndWildness(
       // philosophy as everywhere else here.
       unannotatedWild = unannotatedWild || segmentWild;
       unannotatedChainable = unannotatedChainable || segmentChainable;
+      unannotatedAcquisitionMethod ??= segmentAcquisitionMethod;
     }
   }
 
@@ -381,36 +542,42 @@ function resolveFormIdsAndWildness(
     // case below (formId 0), just for the all-unannotated case.
     const wild = isWildArea(areaText);
     const chainable = isChainableArea(areaText);
+    const acquisitionMethod = acquisitionMethodArea(areaText);
     if (CONCURRENT_UNDISAMBIGUATED_SPECIES.has(speciesName)) {
       return {
         formIds: varieties.map((v) => v.formId),
         wildByFormId: new Map(varieties.map((v) => [v.formId, wild])),
         chainableByFormId: new Map(varieties.map((v) => [v.formId, chainable])),
+        acquisitionMethodByFormId: new Map(varieties.map((v) => [v.formId, acquisitionMethod])),
       };
     }
     return {
       formIds: [0],
       wildByFormId: new Map([[0, wild]]),
       chainableByFormId: new Map([[0, chainable]]),
+      acquisitionMethodByFormId: new Map([[0, acquisitionMethod]]),
     };
   }
   if (sawUnannotatedContent) {
     annotatedFormIds.push(0);
     wildByFormId.set(0, (wildByFormId.get(0) ?? false) || unannotatedWild);
     chainableByFormId.set(0, (chainableByFormId.get(0) ?? false) || unannotatedChainable);
+    if (!acquisitionMethodByFormId.get(0)) {
+      acquisitionMethodByFormId.set(0, unannotatedAcquisitionMethod);
+    }
   }
   const formIds = [...new Set(annotatedFormIds)];
-  return { formIds, wildByFormId, chainableByFormId };
+  return { formIds, wildByFormId, chainableByFormId, acquisitionMethodByFormId };
 }
 
 export function parseAvailability(
   wikitext: string,
   varieties: FetchedVariety[],
   speciesName: string,
-): Array<{ game: Game; formId: number; isWild: boolean; isChainable: boolean }> {
+): Array<{ game: Game; formId: number; isWild: boolean; isChainable: boolean; acquisitionMethod?: AcquisitionMethod }> {
   const mainSection = wikitext.split("{{Availability/Footer}}")[0];
   const calls = findTemplateCalls(mainSection, "Availability/Entry");
-  const results: Array<{ game: Game; formId: number; isWild: boolean; isChainable: boolean }> = [];
+  const results: Array<{ game: Game; formId: number; isWild: boolean; isChainable: boolean; acquisitionMethod?: AcquisitionMethod }> = [];
 
   for (const call of calls) {
     const { name, params } = parseTemplateCall(call);
@@ -420,7 +587,7 @@ export function parseAvailability(
     const versionLabels = [params.v, params.v2].filter((v): v is string =>
       Boolean(v),
     );
-    const { formIds, wildByFormId, chainableByFormId } = resolveFormIdsAndWildness(
+    const { formIds, wildByFormId, chainableByFormId, acquisitionMethodByFormId } = resolveFormIdsAndWildness(
       params.area ?? "",
       varieties,
       speciesName,
@@ -441,6 +608,7 @@ export function parseAvailability(
             formId,
             isWild: wildByFormId.get(formId) ?? true,
             isChainable: chainableByFormId.get(formId) ?? true,
+            acquisitionMethod: acquisitionMethodByFormId.get(formId),
           });
         }
       }
@@ -467,6 +635,7 @@ async function scrapeOneSpecies(
     if (existing) {
       existing.isWild = existing.isWild || hit.isWild;
       existing.isChainable = existing.isChainable || hit.isChainable;
+      existing.acquisitionMethod ??= hit.acquisitionMethod;
       continue;
     }
     byKey.set(key, {
@@ -475,6 +644,7 @@ async function scrapeOneSpecies(
       game: hit.game,
       isWild: hit.isWild,
       isChainable: hit.isChainable,
+      acquisitionMethod: hit.acquisitionMethod,
     });
   }
   return {

@@ -166,17 +166,35 @@ export const METHOD_LABELS: Record<Method, string> = {
 };
 
 /**
+ * Acquisition-method labels for a non-wild baseline "wild" row — "gift" also
+ * covers Bulbapedia's "(Only one)" static encounters (confirmed empirically:
+ * no textual signal distinguishes an NPC gift from a fixed static encounter
+ * on Bulbapedia — see scrapeBulbapedia.ts's AcquisitionMethod). Falls back to
+ * the old generic label if acquisition_method is somehow missing (shouldn't
+ * happen for a non-wild row, but the column is nullable).
+ */
+const ACQUISITION_METHOD_LABELS: Record<string, string> = {
+  gift: "Gift / Static Encounter",
+  trade: "Trade",
+  evolution: "Evolution",
+  hatch: "Hatch-Only",
+};
+
+/**
  * Display label for a shiny_methods row's method, distinguishing the baseline
  * "wild" method's actual acquisition path — `is_wild_encounter` is false for
  * gift/static/trade/evolution/hatch-only availability (the shiny roll still
  * fires the same way, but calling it "Wild Encounter" is misleading when the
- * species was never actually obtainable in the wild there). Every other
- * method already implies its own specific acquisition path, so only the
- * baseline method needs this distinction.
+ * species was never actually obtainable in the wild there). Previously every
+ * non-wild reason collapsed into one generic "Gift / Static Encounter" label
+ * — confirmed a real bug (Venusaur, reachable only by evolving Ivysaur, was
+ * never actually gifted) — now distinguished via acquisition_method. Every
+ * other method already implies its own specific acquisition path, so only
+ * the baseline method needs this distinction.
  */
-export function methodLabel(method: Pick<ShinyMethod, "method" | "is_wild_encounter">): string {
+export function methodLabel(method: Pick<ShinyMethod, "method" | "is_wild_encounter" | "acquisition_method">): string {
   if (method.method === "wild" && !method.is_wild_encounter) {
-    return "Gift / Static Encounter";
+    return ACQUISITION_METHOD_LABELS[method.acquisition_method ?? ""] ?? "Gift / Static Encounter";
   }
   return METHOD_LABELS[method.method];
 }

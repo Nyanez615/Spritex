@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { CollectionEntry, CosmeticForm, Pokemon, ShinyMethod } from "@/lib/tauri";
+import type { CollectionEntry, CosmeticForm, EvolutionChainMember, Pokemon, ShinyMethod } from "@/lib/tauri";
 import {
   applyCosmeticForm,
   CollectionPanel,
+  groupByStage,
+  ProfileSection,
   SpriteGalleryDialog,
   StatsSection,
 } from "./pokemon.$id";
@@ -321,5 +323,66 @@ describe("applyCosmeticForm", () => {
     expect(result.color).toBe(BULBASAUR.color);
     expect(result.gender_rate).toBe(BULBASAUR.gender_rate);
     expect(result.is_legendary).toBe(BULBASAUR.is_legendary);
+  });
+});
+
+describe("groupByStage", () => {
+  function member(id: number, formId: number, displayName: string, stage: number): EvolutionChainMember {
+    return { pokemon: { ...BULBASAUR, id, form_id: formId, display_name: displayName }, stage };
+  }
+
+  it("clusters two parallel single-step paths by stage instead of one flat sequential row — regression test for the reported Rattata bug (Rattata/Alolan Rattata at stage 0 looked like it led into Raticate/Alolan Raticate at stage 1 as one chain)", () => {
+    const chain = [
+      member(19, 0, "Rattata", 0),
+      member(19, 1, "Alolan Rattata", 0),
+      member(20, 0, "Raticate", 1),
+      member(20, 1, "Alolan Raticate", 1),
+    ];
+    const groups = groupByStage(chain);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].map((m) => m.pokemon.display_name)).toEqual(["Rattata", "Alolan Rattata"]);
+    expect(groups[1].map((m) => m.pokemon.display_name)).toEqual(["Raticate", "Alolan Raticate"]);
+  });
+
+  it("clusters a branching evolution (one ancestor, several same-stage descendants) together — regression test for the user-flagged Eevee/Oddish shape, not just the parallel-paths shape", () => {
+    const chain = [
+      member(133, 0, "Eevee", 0),
+      member(134, 0, "Vaporeon", 1),
+      member(135, 0, "Jolteon", 1),
+      member(136, 0, "Flareon", 1),
+    ];
+    const groups = groupByStage(chain);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].map((m) => m.pokemon.display_name)).toEqual(["Eevee"]);
+    expect(groups[1].map((m) => m.pokemon.display_name)).toEqual(["Vaporeon", "Jolteon", "Flareon"]);
+  });
+
+  it("keeps a fully linear chain as 3 separate single-member groups, not one merged group", () => {
+    const chain = [
+      member(1, 0, "Bulbasaur", 0),
+      member(2, 0, "Ivysaur", 1),
+      member(3, 0, "Venusaur", 2),
+    ];
+    const groups = groupByStage(chain);
+    expect(groups.map((g) => g.map((m) => m.pokemon.display_name))).toEqual([
+      ["Bulbasaur"],
+      ["Ivysaur"],
+      ["Venusaur"],
+    ]);
+  });
+});
+
+describe("ProfileSection", () => {
+  it("shows a real hatch-step count for a breedable species", () => {
+    render(<ProfileSection pokemon={BULBASAUR} types={["grass", "poison"]} cosmeticForms={[]} />);
+    expect(screen.getByText(/5120 steps/)).toBeInTheDocument();
+  });
+
+  it('shows "—" instead of a hatch-step count for a No-Eggs species — regression test for a real contradiction: Mew is in the "No Eggs" egg group but still has a real, nonzero PokéAPI hatch_counter (it\'s a vestigial value the game data table never omits, mechanically meaningless since you can never obtain a No-Eggs species\' egg), and the page previously showed both "Egg Groups: No Eggs" and a literal "Hatch Time: 30600 steps" directly contradicting it', () => {
+    const mew: Pokemon = { ...BULBASAUR, egg_groups: '["no-eggs"]', hatch_steps: 30600 };
+    render(<ProfileSection pokemon={mew} types={["psychic"]} cosmeticForms={[]} />);
+    expect(screen.queryByText(/30600 steps/)).not.toBeInTheDocument();
+    const hatchTimeLabel = screen.getByText("Hatch Time");
+    expect(hatchTimeLabel.parentElement).toHaveTextContent("—");
   });
 });

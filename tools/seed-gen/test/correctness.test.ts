@@ -729,3 +729,151 @@ test("Galarian Darmanitan's own Zen Mode cosmetic form (kind \"galar-zen\") atta
   assert.equal(kantonianZen!.form_id, 0, "expected base Zen Mode to attach to Kantonian (form_id 0)");
   assert.equal(galarianZen!.form_id, 1, "expected Galarian Zen Mode to attach to Galarian Darmanitan (form_id 1), not the base form");
 });
+
+test("Alolan Rattata (#19) is correctly tracked as Generation 7, NOT Generation 1 — regression test for a real bug: every pokemon row's generation column was sourced from the species-level species.generation.name, the SAME value for every variety, including non-default ones. Alolan Rattata was introduced in Sun/Moon (Gen 7), four generations after Kantonian Rattata (Gen 1) — confirmed via PokéAPI's pokemon-form version_group field, resolved to a generation via the version-group resource's own generation field", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const alolan = pokemon.find((p) => p.id === 19 && p.form_name === "Alolan");
+  const base = pokemon.find((p) => p.id === 19 && p.form_id === 0);
+  assert.ok(alolan, "expected an Alolan Rattata row in pokemon.json");
+  assert.ok(base, "expected a base Rattata row in pokemon.json");
+  assert.equal(alolan!.generation, 7, "expected Alolan Rattata's generation to be 7 (Sun/Moon), not inherited from Kantonian Rattata");
+  assert.equal(base!.generation, 1, "expected base Rattata's generation to stay 1");
+});
+
+test("Galarian Darmanitan (#555) is correctly tracked as Generation 8, NOT Generation 5 — same regression class as Alolan Rattata above, different species (introduced in Sword/Shield, four generations after Kantonian Darmanitan's Black/White debut)", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const galarian = pokemon.find((p) => p.id === 555 && p.form_name === "Galarian");
+  const base = pokemon.find((p) => p.id === 555 && p.form_id === 0);
+  assert.ok(galarian, "expected a Galarian Darmanitan row in pokemon.json");
+  assert.ok(base, "expected a base Darmanitan row in pokemon.json");
+  assert.equal(galarian!.generation, 8, "expected Galarian Darmanitan's generation to be 8 (Sword/Shield), not inherited from Kantonian Darmanitan");
+  assert.equal(base!.generation, 5, "expected base Darmanitan's generation to stay 5");
+});
+
+// --- Granular acquisition_method classification (the "Venusaur shouldn't say Gift / Static Encounter" fix) ---
+
+test("Bulbasaur (#1)'s gen6_xy wild row is acquisition_method \"gift\" (a real Professor Sycamore gift) — Venusaur's (#3) own gen6_xy wild row is \"evolution\" (only reachable by evolving Ivysaur, never directly gifted), regression test for the bug that triggered this audit: both used to render the identical, misleading \"Gift / Static Encounter\" label", async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const bulbasaur = rows.find((r) => r.pokemon_id === 1 && r.form_id === 0 && r.game === "gen6_xy" && r.method === "wild");
+  const venusaur = rows.find((r) => r.pokemon_id === 3 && r.form_id === 0 && r.game === "gen6_xy" && r.method === "wild");
+  assert.ok(bulbasaur, "expected a gen6_xy/wild row for Bulbasaur");
+  assert.ok(venusaur, "expected a gen6_xy/wild row for Venusaur");
+  assert.equal(bulbasaur!.acquisition_method, "gift");
+  assert.equal(venusaur!.acquisition_method, "evolution");
+});
+
+test('The Sinnoh lake trio (Uxie #480, Mesprit #481, Azelf #482), genuine "(Only one)" static encounters, also classify as acquisition_method "gift" — confirmed empirically (not assumed) that Bulbapedia\'s wikitext has no textual signal distinguishing an NPC gift from a fixed "(Only one)" static encounter: both route through the identical [[List of in-game event Pokémon...|Only one]] catalog-link template (verified directly against Bulbasaur\'s Sycamore-lab gift vs. the lake trio\'s lake encounters)', async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  for (const id of [480, 481, 482]) {
+    const row = rows.find((r) => r.pokemon_id === id && r.game === "gen4_dp" && r.method === "wild");
+    assert.ok(row, `expected a gen4_dp/wild row for pokemon ${id}`);
+    assert.equal(row!.acquisition_method, "gift");
+  }
+});
+
+test("Alolan Vulpix (#37) is acquisition_method \"trade\" in SwSh — confirmed via Bulbapedia's own wikitext, a clean explicit [[Trade]]-only path with no concurrent gift/static segment to tie-break against", async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const alolan = pokemon.find((p) => p.id === 37 && p.form_name === "Alolan");
+  assert.ok(alolan, "expected an Alolan Vulpix row in pokemon.json");
+  const row = rows.find((r) => r.pokemon_id === 37 && r.form_id === alolan!.form_id && r.game === "swsh" && r.method === "wild");
+  assert.ok(row, "expected a swsh/wild row for Alolan Vulpix");
+  assert.equal(row!.acquisition_method, "trade");
+});
+
+test('Chespin (#650)\'s X/Y wild row is acquisition_method "gift", not "trade" — its area= cell has TWO <br>-separated segments, a starter gift ("[[First partner Pokémon]] from Tierno") AND a later \'Traded from Shauna\' alternate path; "gift" is correct here since the starter gift is genuinely the primary, document-order-first acquisition path, not a misclassification', async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const row = rows.find((r) => r.pokemon_id === 650 && r.form_id === 0 && r.game === "gen6_xy" && r.method === "wild");
+  assert.ok(row, "expected a gen6_xy/wild row for Chespin");
+  assert.equal(row!.acquisition_method, "gift");
+});
+
+test("acquisition_method is always null for the masuda/dynamax_adventure/friend_safari method rows, even when the species' baseline wild row is non-wild — it's scoped to the baseline \"wild\" method row only, the same scoping is_wild_encounter already has", async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const nonWildMethodRows = rows.filter((r) => r.method !== "wild");
+  assert.ok(nonWildMethodRows.length > 0, "expected at least one non-wild-method row in the dataset");
+  assert.ok(nonWildMethodRows.every((r) => r.acquisition_method === null), "expected acquisition_method to be null on every non-wild-method row");
+});
+
+// --- First-50-species audit (#1-50): 6 real bugs found via 3 parallel live-Bulbapedia audits ---
+
+test('Caterpie (#10) in Black/White is acquisition_method "hatch", not wild, with no chain_radar/chain_fishing — regression test for a real bug found auditing #1-17: NON_WILD_MARKERS only recognized the generic "Hatch {{pkmn|Egg}}" phrasing, missing the much more common "Breed {{p|EvolvedSpecies}}" template/wikilink Bulbapedia uses when a pre-evolution\'s only source in a game is breeding its OWN evolved form (confirmed: White\'s entry reads "{{pkmn|breeding|Breed}} {{p|Metapod}} or {{p|Butterfree}}") — found on ~295 cached pages, not a one-off', async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const wild = rows.find((r) => r.pokemon_id === 10 && r.form_id === 0 && r.game === "gen5_bw" && r.method === "wild");
+  assert.ok(wild, "expected a gen5_bw/wild row for Caterpie");
+  assert.equal(wild!.is_wild_encounter, false);
+  assert.equal(wild!.acquisition_method, "hatch");
+  assert.ok(
+    rows.every((r) => !(r.pokemon_id === 10 && r.game === "gen5_bw" && (r.method === "chain_radar" || r.method === "chain_fishing"))),
+    "expected no gen5_bw chain_radar/chain_fishing row for Caterpie (breed-only, not a real wild encounter to chain against)",
+  );
+});
+
+test('Weedle (#13) in Omega Ruby/Alpha Sapphire is acquisition_method "hatch" via the same "Breed {{p|X}}" phrasing, with no chain_fishing/dex_nav row — confirmed via the wikilink variant "[[Pokémon breeding|Breed]] {{p|X}}" too (Diglett #50 in X/Y), not just the template variant', async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const wild = rows.find((r) => r.pokemon_id === 13 && r.form_id === 0 && r.game === "gen6_oras" && r.method === "wild");
+  assert.ok(wild, "expected a gen6_oras/wild row for Weedle");
+  assert.equal(wild!.acquisition_method, "hatch");
+  assert.ok(rows.every((r) => !(r.pokemon_id === 13 && r.game === "gen6_oras" && (r.method === "chain_fishing" || r.method === "dex_nav"))));
+
+  const digletWild = rows.find((r) => r.pokemon_id === 50 && r.form_id === 0 && r.game === "gen6_xy" && r.method === "wild");
+  assert.ok(digletWild, "expected a gen6_xy/wild row for Diglett");
+  assert.equal(digletWild!.acquisition_method, "hatch", "expected the [[Pokémon breeding|Breed]] wikilink variant to be recognized too");
+});
+
+test("Alolan Raticate (#20) has real Sun AND Moon (gen7_sm) availability — regression test for a real bug found auditing #18-34: the bold form annotation in Raticate's own wikitext is \"'''{{rf|Alolan}} Form'''\" / \"'''[[Kanto]]nian Form'''\" (embedded wikitext markup, not the plain \"Alolan Form\"/\"Kantonian Form\" a reader sees rendered) — resolveAnnotation never rendered this to plain text before matching against tracked variety form names, so NEITHER bold annotation ever matched, and the entire entry's availability silently collapsed onto formId 0, leaving Alolan Raticate with zero gen7_sm rows", async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const alolanWild = rows.find((r) => r.pokemon_id === 20 && r.form_id === 1 && r.game === "gen7_sm" && r.method === "wild");
+  assert.ok(alolanWild, "expected a gen7_sm/wild row for Alolan Raticate");
+  assert.equal(alolanWild!.is_wild_encounter, true);
+});
+
+test("Raichu's (#26) Alolan form (form_id 1) has zero Scarlet/Violet rows — its only SV source is \"{{g|HOME}}, [[Poké Portal News]]\" (a one-way transfer plus a one-time event-distribution feature, neither a native shiny-roll-bearing source), and zero rows in Legends: Z-A's wild method despite a real availability fact existing there — its only Z-A source is \"[[In-game trade|Trade]] Kantonian Raichu\" (a wikilink to the differently-titled \"In-game trade\" page, not literally \"[[Trade...\"), which the pre-existing trade regex never matched. Both are real bugs found auditing #18-34", async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  assert.ok(rows.every((r) => !(r.pokemon_id === 26 && r.form_id === 1 && r.game === "sv")), "expected zero sv rows for Alolan Raichu (HOME/Poké-Portal-News-only)");
+
+  const zaRow = rows.find((r) => r.pokemon_id === 26 && r.form_id === 1 && r.game === "legends_za" && r.method === "wild");
+  assert.ok(zaRow, "expected a legends_za/wild row for Alolan Raichu");
+  assert.equal(zaRow!.is_wild_encounter, false);
+  assert.equal(zaRow!.acquisition_method, "trade");
+});
+
+test("Sandslash's (#28) Alolan form (form_id 1) gets no Brilliant Pokémon row in SwSh — its only base-game source is Trade and its only Expansion-Pass source is the Max Lair Dynamax Adventure den, neither a tall-grass encounter Brilliant Pokémon can spawn in. Regression test for a real bug found auditing #18-34: \"[[Max Lair]] ([[Dynamax Adventure]])\" mentioned inline in area= text (independent of the separate scrapeDynamaxAdventure.ts roster file, which already derives its own correct dynamax_adventure row) wasn't recognized as non-chainable, the same shape of gap Friend Safari/Grand Underground needed fixing for in an earlier round", async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  assert.ok(
+    rows.every((r) => !(r.pokemon_id === 28 && r.form_id === 1 && r.game === "swsh" && r.method === "brilliant_pokemon")),
+    "expected no swsh/brilliant_pokemon row for Alolan Sandslash",
+  );
+  assert.ok(
+    rows.some((r) => r.pokemon_id === 28 && r.form_id === 1 && r.game === "swsh" && r.method === "dynamax_adventure"),
+    "expected the real swsh/dynamax_adventure row to still exist",
+  );
+});
+
+test('Kantonian Sandshrew/Sandslash (#27/#28, form_id 0) and Kantonian Vulpix/Ninetales (#37/#38, form_id 0) have zero Sun/Moon and Ultra Sun/Ultra Moon rows — their only listed Gen 7 mainline source is "[[Pokémon Bank]]", a one-way cloud transfer with no new shiny roll (the same "no new roll happens there" principle already applied to Pal Park, just for when the equivalent fact shows up inline in an otherwise-real entry rather than as its own dedicated pseudo-version). Regression test for a real bug found auditing #18-50 across 4 species', async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  for (const id of [27, 28, 37, 38]) {
+    assert.ok(
+      rows.every((r) => !(r.pokemon_id === id && r.form_id === 0 && (r.game === "gen7_sm" || r.game === "gen7_usum"))),
+      `expected zero gen7_sm/gen7_usum rows for pokemon ${id}'s base form (Pokémon-Bank-only, no native source)`,
+    );
+  }
+});
+
+test("Vulpix (#37) and Ninetales (#38) have real Scarlet/Violet availability for both forms — regression test for a real bug found auditing #35-50: Bulbapedia splits a species' DLC encounter locations into version-specific labels (\"The Hidden Treasure of Area Zero (Scarlet)\"/\"(Violet)\") when they genuinely differ by version, instead of the one shared label BULBAPEDIA_LABEL_TO_GAMES already had — the suffixed labels matched nothing, so parseAvailability's `if (!games) continue;` silently dropped the whole entry, found on 19 cached pages", async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  for (const id of [37, 38]) {
+    assert.ok(rows.some((r) => r.pokemon_id === id && r.game === "sv"), `expected at least one sv row for pokemon ${id}`);
+  }
+});
+
+test("Nidoran♀ (#29) and Nidoran♂ (#32) are derived from genuinely distinct Bulbapedia pages — regression test for a real pipeline bug found auditing #18-34: httpCache.ts's sanitizeKey() collapsed both ♀ (U+2640) and ♂ (U+2642) to the same \"_\" character, so the two species' cache filenames collided and Nidoran♂'s shiny_methods rows were silently a byte-for-byte copy of Nidoran♀'s (its own page was never fetched at all) — verified via each row's own citation_url, which must point at the correct gender-specific Bulbapedia URL", async () => {
+  const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const femaleCitation = rows.find((r) => r.pokemon_id === 29)?.citation_url;
+  const maleCitation = rows.find((r) => r.pokemon_id === 32)?.citation_url;
+  assert.ok(femaleCitation, "expected at least one shiny_methods row for Nidoran♀");
+  assert.ok(maleCitation, "expected at least one shiny_methods row for Nidoran♂");
+  assert.notEqual(femaleCitation, maleCitation, "expected distinct citation URLs — same URL would mean the cache collision regressed");
+  assert.match(femaleCitation!, /Nidoran%E2%99%80/, "expected Nidoran♀'s citation to point at its own (♀) Bulbapedia URL");
+  assert.match(maleCitation!, /Nidoran%E2%99%82/, "expected Nidoran♂'s citation to point at its own (♂) Bulbapedia URL");
+});
