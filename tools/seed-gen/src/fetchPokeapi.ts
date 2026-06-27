@@ -144,6 +144,25 @@ const GROUP_A_FORM_NAMES = new Set([
   "bloodmoon", // ursaluna
 ]);
 
+/**
+ * Per-variety overrides for the two species-level-only fields PokéAPI's
+ * `pokemon-species` resource can't express per-variety at all (only one
+ * gender_rate/growth_rate value exists per species, full stop). Confirmed
+ * via Bulbapedia's "Partner Pokémon" article: Partner Pikachu/Eevee are
+ * "in the Medium Slow Experience group ... rather than the Medium Fast
+ * group like their regular counterparts," and have "an effective gender
+ * ratio of one male to one female ... rather than seven males to one
+ * female like regular Eevee" (Pikachu's own species-level gender_rate is
+ * already 4 — i.e. already 1:1 — so this is a no-op correction for
+ * Pikachu and the real fix only for Eevee, applied uniformly since both
+ * are tagged "Starter" and there's no cleaner per-species signal to read
+ * this from). Keyed by formName, not species id, since GROUP_A_FORM_NAMES'
+ * "starter" entry is confirmed to apply only to these two species.
+ */
+const PARTNER_FORM_OVERRIDES: Record<string, { genderRate: number; growthRate: string }> = {
+  Starter: { genderRate: 4, growthRate: "medium-slow" },
+};
+
 interface PokeApiNamedResource {
   name: string;
   url: string;
@@ -232,6 +251,20 @@ export interface FetchedVariety {
    * the default variety.
    */
   generationNumber: number;
+  /**
+   * Overrides the species-level gender_rate/growth_rate for this one
+   * variety — undefined (the default for every variety except Partner
+   * Pikachu/Eevee) means "use the species' own value," since PokéAPI's
+   * `pokemon-species` resource only has room for one gender_rate/growth_rate
+   * per species, no per-variety field at all. Partner Pikachu/Eevee
+   * genuinely differ from their regular counterparts in the real games
+   * (confirmed via Bulbapedia's "Partner Pokémon" article: "guaranteed...
+   * Medium Slow Experience group... rather than Medium Fast," and an
+   * effective 1:1 gender ratio rather than inherited from the species) —
+   * see PARTNER_FORM_OVERRIDES below, the only two rows this is non-null for.
+   */
+  genderRate?: number;
+  growthRate?: string;
   /** Raw PokéAPI pokemon-resource name this variety was fetched from (e.g. "meowth-alola") — lets fetchEvolutionChains.ts resolve evolution_details' base_form/evolved_form references back to a (pokemonId, formId) pair. */
   apiPokemonName: string;
   types: string[];
@@ -561,6 +594,7 @@ async function fetchVarietyDetail(
     const versionGroup = await limiter.run(() =>
       cachedJson<PokeApiVersionGroup>("pokeapi-version-group", form.version_group.name, form.version_group.url),
     );
+    const override = PARTNER_FORM_OVERRIDES[formName];
     return {
       variety: {
         formId: formIndex,
@@ -568,6 +602,8 @@ async function fetchVarietyDetail(
         displayName: formDisplayName,
         apiPokemonName: variety.pokemon.name,
         generationNumber: generationNumberFromName(versionGroup.generation.name),
+        genderRate: override?.genderRate,
+        growthRate: override?.growthRate,
         ...shared,
       },
     };

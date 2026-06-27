@@ -127,6 +127,34 @@ function formNameOf(key: FormKey, speciesById: Map<number, FetchedSpecies>): str
 }
 
 /**
+ * Varieties that share a chain_id (and, for Partner Pikachu/Eevee, an
+ * undisambiguated PokéAPI evolution_details entry) with their species'
+ * normally-evolving siblings, but confirmed via Bulbapedia to have no real
+ * "evolves into"/"evolves from" relationship at all — without this, the
+ * ambiguous-fan-out logic below wires them into edges that don't exist in
+ * the actual games:
+ * - Partner Pikachu/Eevee ("Starter"): Bulbapedia's "Partner Pokémon"
+ *   article — "they prefer ... to be out of their Poké Ball and have no
+ *   interest in evolving"; they're also gift-only, never obtained by
+ *   evolving a Pichu/pre-evolution. Confirmed live: without this exclusion,
+ *   Partner Pikachu wrongly got both a Pichu->Partner Pikachu edge and
+ *   Partner Pikachu->Raichu/Alolan Raichu edges, and Partner Eevee wrongly
+ *   got edges to all 8 Eeveelutions.
+ * - Bloodmoon Ursaluna ("Bloodmoon"): Bulbapedia's "Ursaluna" article —
+ *   "unlike regular Ursaluna, it is not known to evolve into or from any
+ *   other Pokémon" (it's a fixed individual found directly in Kitakami, not
+ *   obtained by evolving any Ursaring). Confirmed live: without this
+ *   exclusion, Ursaring wrongly got an edge to Bloodmoon Ursaluna alongside
+ *   its real edge to regular Ursaluna.
+ */
+const EVOLUTION_EDGE_EXCLUDED_FORM_NAMES = new Set(["Starter", "Bloodmoon"]);
+
+function isExcludedFromEvolutionEdges(key: FormKey, speciesById: Map<number, FetchedSpecies>): boolean {
+  const formName = formNameOf(key, speciesById);
+  return formName !== null && EVOLUTION_EDGE_EXCLUDED_FORM_NAMES.has(formName);
+}
+
+/**
  * Records one real evolves-into relationship per evolution_details entry —
  * the same per-detail loop that already feeds `upsert` above, so this can
  * never drift from EvolutionChainNode's own stage data.
@@ -161,8 +189,12 @@ function recordEdge(
   speciesById: Map<number, FetchedSpecies>,
 ): void {
   if (!fromKey || !toKey) return;
-  const fromOptions = fromAmbiguous ? varietiesOf(fromKey, speciesById) : [fromKey];
-  const toOptions = toAmbiguous ? varietiesOf(toKey, speciesById) : [toKey];
+  const fromOptions = (fromAmbiguous ? varietiesOf(fromKey, speciesById) : [fromKey]).filter(
+    (k) => !isExcludedFromEvolutionEdges(k, speciesById),
+  );
+  const toOptions = (toAmbiguous ? varietiesOf(toKey, speciesById) : [toKey]).filter(
+    (k) => !isExcludedFromEvolutionEdges(k, speciesById),
+  );
 
   if (fromOptions.length > 1 && toOptions.length > 1) {
     for (const from of fromOptions) {

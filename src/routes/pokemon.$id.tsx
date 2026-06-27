@@ -528,27 +528,7 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
     return <CenteredMessage text={errorMessage(error) ?? FALLBACK_ERROR} />;
   }
 
-  const hasGenderSprites = Boolean(
-    pokemon.sprite_url_female || pokemon.shiny_sprite_url_female,
-  );
-  const spriteVariants: SpriteVariant[] = [
-    { src: pokemon.sprite_url, label: hasGenderSprites ? "Male" : "Standard", cosmeticForm: null },
-    {
-      src: pokemon.shiny_sprite_url,
-      label: hasGenderSprites ? "Shiny Male" : "Shiny",
-      cosmeticForm: null,
-    },
-    ...(pokemon.sprite_url_female
-      ? [{ src: pokemon.sprite_url_female, label: "Female", cosmeticForm: null }]
-      : []),
-    ...(pokemon.shiny_sprite_url_female
-      ? [{ src: pokemon.shiny_sprite_url_female, label: "Shiny Female", cosmeticForm: null }]
-      : []),
-    ...(cosmeticForms ?? []).flatMap((f) => [
-      { src: f.sprite_url, label: f.display_name, cosmeticForm: f },
-      { src: f.shiny_sprite_url, label: `Shiny ${f.display_name}`, cosmeticForm: f },
-    ]),
-  ];
+  const spriteVariants = buildSpriteVariants(pokemon, cosmeticForms);
   function trackVariant(i: number) {
     setGalleryIndex(i);
     setSelectedCosmeticForm(spriteVariants[i]?.cosmeticForm ?? null);
@@ -744,6 +724,37 @@ interface SpriteVariant {
   label: string;
   /** The Mega/Gmax cosmetic form this sprite belongs to, if any — null for every standard/shiny/gendered sprite. Drives displayPokemon's view-switch when selected. */
   cosmeticForm: CosmeticForm | null;
+}
+
+/**
+ * Every sprite tile the gallery should show — omits a Shiny entry entirely
+ * (standard or per-cosmetic-form) whenever its `shiny_sprite_url` is empty,
+ * rather than rendering a blank/broken image. Empty exactly for species
+ * that can never be Shiny in the real games (e.g. Partner Pikachu/Eevee —
+ * PokéAPI has no shiny artwork for them at all, since none exists, not a
+ * missing-data gap).
+ */
+export function buildSpriteVariants(
+  pokemon: Pokemon,
+  cosmeticForms: CosmeticForm[] | undefined,
+): SpriteVariant[] {
+  const hasGenderSprites = Boolean(pokemon.sprite_url_female || pokemon.shiny_sprite_url_female);
+  return [
+    { src: pokemon.sprite_url, label: hasGenderSprites ? "Male" : "Standard", cosmeticForm: null },
+    ...(pokemon.shiny_sprite_url
+      ? [{ src: pokemon.shiny_sprite_url, label: hasGenderSprites ? "Shiny Male" : "Shiny", cosmeticForm: null }]
+      : []),
+    ...(pokemon.sprite_url_female
+      ? [{ src: pokemon.sprite_url_female, label: "Female", cosmeticForm: null }]
+      : []),
+    ...(pokemon.shiny_sprite_url_female
+      ? [{ src: pokemon.shiny_sprite_url_female, label: "Shiny Female", cosmeticForm: null }]
+      : []),
+    ...(cosmeticForms ?? []).flatMap((f) => [
+      { src: f.sprite_url, label: f.display_name, cosmeticForm: f },
+      ...(f.shiny_sprite_url ? [{ src: f.shiny_sprite_url, label: `Shiny ${f.display_name}`, cosmeticForm: f }] : []),
+    ]),
+  ];
 }
 
 function SpriteBlock({

@@ -4,6 +4,7 @@ import type { CollectionEntry, CosmeticForm, EvolutionChainEdge, EvolutionChainM
 import {
   applyCosmeticForm,
   buildEvolutionLanes,
+  buildSpriteVariants,
   CollectionPanel,
   ProfileSection,
   SpriteGalleryDialog,
@@ -56,6 +57,52 @@ const BULBASAUR: Pokemon = {
   hatch_steps: 5120,
   flavor_text: null,
 };
+
+describe("buildSpriteVariants", () => {
+  it("includes a Shiny tile when shiny_sprite_url is populated", () => {
+    const variants = buildSpriteVariants(BULBASAUR, []);
+    expect(variants.map((v) => v.label)).toEqual(["Standard", "Shiny"]);
+  });
+
+  it("omits the Shiny tile entirely when shiny_sprite_url is empty — regression test for a real bug: Partner Pikachu/Eevee can never be Shiny in the real games, so PokéAPI has no shiny artwork for them at all, but the gallery used to render a blank/broken tile labeled \"Shiny\" anyway", () => {
+    const partnerPikachu: Pokemon = { ...BULBASAUR, display_name: "Partner Pikachu", shiny_sprite_url: "" };
+    const variants = buildSpriteVariants(partnerPikachu, []);
+    expect(variants.map((v) => v.label)).toEqual(["Standard"]);
+  });
+
+  it("omits a cosmetic form's Shiny tile the same way, while keeping its standard tile", () => {
+    const cosmeticForm: CosmeticForm = {
+      id: 1,
+      pokemon_id: 1,
+      form_id: 0,
+      kind: "mega",
+      display_name: "Mega Bulbasaur",
+      sprite_url: "mega.png",
+      shiny_sprite_url: "",
+      mega_stone_item: "bulbasaurite",
+      types: '["grass","poison"]',
+      height: 7,
+      weight: 69,
+      abilities: "[]",
+      stat_hp: 1,
+      stat_attack: 1,
+      stat_defense: 1,
+      stat_special_attack: 1,
+      stat_special_defense: 1,
+      stat_speed: 1,
+      stat_total: 6,
+      base_experience: 0,
+      ev_yield_hp: 0,
+      ev_yield_attack: 0,
+      ev_yield_defense: 0,
+      ev_yield_special_attack: 0,
+      ev_yield_special_defense: 0,
+      ev_yield_speed: 0,
+    };
+    const variants = buildSpriteVariants(BULBASAUR, [cosmeticForm]);
+    expect(variants.map((v) => v.label)).toEqual(["Standard", "Shiny", "Mega Bulbasaur"]);
+  });
+});
 
 describe("SpriteGalleryDialog", () => {
   const variants = [

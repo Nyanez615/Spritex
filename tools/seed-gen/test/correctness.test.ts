@@ -928,14 +928,67 @@ test('Pumpkaboo\'s (#710) 4 sizes each have exactly one edge to the SAME-NAMED G
   }
 });
 
-test("Eevee (#133) and Partner Eevee (form 1) each have exactly 8 edges, one to every Eeveelution — confirmed real and intentional (unlike Rattata's case): both Eevee forms can genuinely evolve into any of the 8 Eeveelutions, so a 2-forms-by-8-targets relationship is correct here, not a guess", async () => {
+test("Eevee (#133, base form) has exactly 8 edges, one to every Eeveelution — confirmed real and intentional (unlike Rattata's case): a real Eevee can genuinely evolve into any of the 8 Eeveelutions", async () => {
   const baseEdges = await edgesFrom(133, 0);
-  const partnerEdges = await edgesFrom(133, 1);
   assert.equal(baseEdges.length, 8, "expected base Eevee to have 8 edges, one per Eeveelution");
-  assert.equal(partnerEdges.length, 8, "expected Partner Eevee to have 8 edges, one per Eeveelution");
 });
 
 test("Tauros (#128), with no evolution at all, has zero evolution_edges rows in either direction — confirmed it doesn't spuriously connect to anything despite its 3 Paldean breeds sharing one stage", async () => {
   const all = await readOutJson<EvolutionEdgeRow[]>("evolution-edges.json");
   assert.ok(all.every((e) => e.from_pokemon_id !== 128 && e.to_pokemon_id !== 128));
+});
+
+test("Partner Pikachu (#25, form 1) has zero evolution_edges rows in either direction — confirmed via Bulbapedia's \"Partner Pokémon\" article (\"they ... have no interest in evolving\"; never obtained by evolving a Pichu either) — regression test for a real bug where Pichu's undisambiguated evolution_details entry wrongly fanned out to wire Pichu->Partner Pikachu and Partner Pikachu->Raichu/Alolan Raichu", async () => {
+  const edges = await edgesFrom(25, 1);
+  assert.deepEqual(edges, [], "expected Partner Pikachu to have no outgoing edges");
+  const all = await readOutJson<EvolutionEdgeRow[]>("evolution-edges.json");
+  assert.ok(
+    all.every((e) => !(e.to_pokemon_id === 25 && e.to_form_id === 1)),
+    "expected no edge to ever target Partner Pikachu either",
+  );
+});
+
+test("base Pikachu (#25, form 0) keeps its real edges despite Partner Pikachu's exclusion: Pichu->Pikachu incoming, Pikachu->Raichu/Alolan Raichu outgoing", async () => {
+  const edges = await edgesFrom(25, 0);
+  assert.deepEqual(
+    edges.map((e) => `${e.to_pokemon_id}:${e.to_form_id}`).sort(),
+    ["26:0", "26:1"],
+  );
+  const all = await readOutJson<EvolutionEdgeRow[]>("evolution-edges.json");
+  assert.ok(
+    all.some((e) => e.to_pokemon_id === 25 && e.to_form_id === 0 && e.from_pokemon_id === 172),
+    "expected Pichu->Pikachu (base form) to still exist",
+  );
+});
+
+test("Partner Eevee (#133, form 1) has zero evolution_edges rows — confirmed via Bulbapedia's \"Partner Pokémon\" article (cannot evolve) — regression test for a real bug where it wrongly fanned out to all 8 Eeveelutions alongside the genuinely many-to-many base Eevee", async () => {
+  const edges = await edgesFrom(133, 1);
+  assert.deepEqual(edges, [], "expected Partner Eevee to have no outgoing edges");
+});
+
+test("Bloodmoon Ursaluna (#901, form 1) has zero evolution_edges rows — confirmed via Bulbapedia's \"Ursaluna\" article (\"unlike regular Ursaluna, it is not known to evolve into or from any other Pokémon\" — a fixed Kitakami individual, not obtained by evolving any Ursaring) — regression test for a real bug where Ursaring's undisambiguated evolution_details entry wrongly wired Ursaring->Bloodmoon Ursaluna alongside the real Ursaring->Ursaluna edge", async () => {
+  const all = await readOutJson<EvolutionEdgeRow[]>("evolution-edges.json");
+  assert.ok(
+    all.every((e) => !(e.to_pokemon_id === 901 && e.to_form_id === 1)),
+    "expected no edge to ever target Bloodmoon Ursaluna",
+  );
+  assert.ok(
+    all.some((e) => e.to_pokemon_id === 901 && e.to_form_id === 0 && e.from_pokemon_id === 217),
+    "expected the real Ursaring->Ursaluna (base form) edge to still exist",
+  );
+});
+
+test("Partner Pikachu (#25, form 1) and Partner Eevee (#133, form 1) have base stats confirmed against Bulbapedia's \"Partner Pokémon\" article (45/80/50/75/60/120 and 65/75/70/65/85/75 respectively — both higher than their regular counterparts \"to compensate for their inability to evolve\"), and Partner Eevee's gender_rate (4, an effective 1:1 ratio) and growth_rate (medium-slow) differ from regular Eevee's (1, medium) — the one species-level-only field PokéAPI can't express per-variety, overridden via a small cited exception", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const partnerPikachu = pokemon.find((p) => p.id === 25 && p.form_id === 1)!;
+  const partnerEevee = pokemon.find((p) => p.id === 133 && p.form_id === 1)!;
+  const regularEevee = pokemon.find((p) => p.id === 133 && p.form_id === 0)!;
+  // Level-100, neutral-nature, max-IV formula: non-HP = 2*base + 36, HP = 2*base + 141.
+  assert.equal(partnerPikachu.stat_attack, 2 * 80 + 36);
+  assert.equal(partnerPikachu.stat_speed, 2 * 120 + 36);
+  assert.equal(partnerEevee.stat_special_defense, 2 * 85 + 36);
+  assert.equal(partnerEevee.gender_rate, 4, "expected Partner Eevee's effective 1:1 gender ratio, not regular Eevee's inherited 7:1");
+  assert.equal(regularEevee.gender_rate, 1, "expected regular Eevee's own 7:1 ratio to stay untouched by the override");
+  assert.equal(partnerEevee.growth_rate, "medium-slow");
+  assert.equal(regularEevee.growth_rate, "medium", "expected regular Eevee's own growth rate to stay untouched by the override");
 });

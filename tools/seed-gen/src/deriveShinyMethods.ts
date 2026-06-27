@@ -394,7 +394,10 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
         sprite_url_female: variety.spriteUrlFemale,
         shiny_sprite_url_female: variety.shinySpriteUrlFemale,
         types: JSON.stringify(variety.types),
-        gender_rate: s.genderRate,
+        // variety.genderRate is only ever set for Partner Pikachu/Eevee (see
+        // PARTNER_FORM_OVERRIDES) — every other variety falls back to the
+        // species-level value, since PokéAPI has no per-variety field at all.
+        gender_rate: variety.genderRate ?? s.genderRate,
         has_gender_differences: s.hasGenderDifferences,
         is_mythical: s.isMythical,
         is_legendary: s.isLegendary,
@@ -403,7 +406,7 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
         is_final_evolution: finalEvolutionIds.has(s.pokemonId),
         color: s.color,
         shape: s.shape,
-        growth_rate: s.growthRate,
+        growth_rate: variety.growthRate ?? s.growthRate,
         egg_groups: JSON.stringify(s.eggGroups),
         capture_rate: s.captureRate,
         base_happiness: s.baseHappiness,
