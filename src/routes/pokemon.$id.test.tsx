@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { CollectionEntry, CosmeticForm, EvolutionChainMember, Pokemon, ShinyMethod } from "@/lib/tauri";
+import type { CollectionEntry, CosmeticForm, EvolutionChainEdge, EvolutionChainMember, Pokemon, ShinyMethod } from "@/lib/tauri";
 import {
   applyCosmeticForm,
+  buildEvolutionLanes,
   CollectionPanel,
-  groupByStage,
   ProfileSection,
   SpriteGalleryDialog,
   StatsSection,
@@ -326,49 +326,81 @@ describe("applyCosmeticForm", () => {
   });
 });
 
-describe("groupByStage", () => {
+describe("buildEvolutionLanes", () => {
   function member(id: number, formId: number, displayName: string, stage: number): EvolutionChainMember {
     return { pokemon: { ...BULBASAUR, id, form_id: formId, display_name: displayName }, stage };
   }
+  function edge(fromId: number, fromForm: number, toId: number, toForm: number): EvolutionChainEdge {
+    return { from_pokemon_id: fromId, from_form_id: fromForm, to_pokemon_id: toId, to_form_id: toForm };
+  }
+  function names(lane: EvolutionChainMember[]): string[] {
+    return lane.map((m) => m.pokemon.display_name);
+  }
 
-  it("clusters two parallel single-step paths by stage instead of one flat sequential row — regression test for the reported Rattata bug (Rattata/Alolan Rattata at stage 0 looked like it led into Raticate/Alolan Raticate at stage 1 as one chain)", () => {
+  it("splits two parallel single-step lines into two separate lanes — regression test for the reported Rattata bug (a single flat row of Rattata/Alolan Rattata/Raticate/Alolan Raticate read as if Rattata could lead into Alolan Raticate)", () => {
     const chain = [
       member(19, 0, "Rattata", 0),
       member(19, 1, "Alolan Rattata", 0),
       member(20, 0, "Raticate", 1),
       member(20, 1, "Alolan Raticate", 1),
     ];
-    const groups = groupByStage(chain);
-    expect(groups).toHaveLength(2);
-    expect(groups[0].map((m) => m.pokemon.display_name)).toEqual(["Rattata", "Alolan Rattata"]);
-    expect(groups[1].map((m) => m.pokemon.display_name)).toEqual(["Raticate", "Alolan Raticate"]);
+    const edges = [edge(19, 0, 20, 0), edge(19, 1, 20, 1)];
+    const lanes = buildEvolutionLanes(chain, edges).map(names);
+    expect(lanes).toHaveLength(2);
+    expect(lanes).toContainEqual(["Rattata", "Raticate"]);
+    expect(lanes).toContainEqual(["Alolan Rattata", "Alolan Raticate"]);
   });
 
-  it("clusters a branching evolution (one ancestor, several same-stage descendants) together — regression test for the user-flagged Eevee/Oddish shape, not just the parallel-paths shape", () => {
+  it("splits a branching evolution into one lane per leaf, each repeating the shared prefix — regression test for the user-flagged Oddish shape (Gloom branches into Vileplume and Bellossom)", () => {
+    const chain = [
+      member(43, 0, "Oddish", 0),
+      member(44, 0, "Gloom", 1),
+      member(45, 0, "Vileplume", 2),
+      member(182, 0, "Bellossom", 2),
+    ];
+    const edges = [edge(43, 0, 44, 0), edge(44, 0, 45, 0), edge(44, 0, 182, 0)];
+    const lanes = buildEvolutionLanes(chain, edges).map(names);
+    expect(lanes).toHaveLength(2);
+    expect(lanes).toContainEqual(["Oddish", "Gloom", "Vileplume"]);
+    expect(lanes).toContainEqual(["Oddish", "Gloom", "Bellossom"]);
+  });
+
+  it("produces one lane per (root, leaf) pair for a genuine many-to-many relationship — Eevee and Partner Eevee can each evolve into every Eeveelution, a correct 2x2 fan-out, not a bug", () => {
     const chain = [
       member(133, 0, "Eevee", 0),
+      member(133, 1, "Partner Eevee", 0),
       member(134, 0, "Vaporeon", 1),
       member(135, 0, "Jolteon", 1),
-      member(136, 0, "Flareon", 1),
     ];
-    const groups = groupByStage(chain);
-    expect(groups).toHaveLength(2);
-    expect(groups[0].map((m) => m.pokemon.display_name)).toEqual(["Eevee"]);
-    expect(groups[1].map((m) => m.pokemon.display_name)).toEqual(["Vaporeon", "Jolteon", "Flareon"]);
+    const edges = [
+      edge(133, 0, 134, 0),
+      edge(133, 0, 135, 0),
+      edge(133, 1, 134, 0),
+      edge(133, 1, 135, 0),
+    ];
+    const lanes = buildEvolutionLanes(chain, edges).map(names);
+    expect(lanes).toHaveLength(4);
+    expect(lanes).toContainEqual(["Eevee", "Vaporeon"]);
+    expect(lanes).toContainEqual(["Eevee", "Jolteon"]);
+    expect(lanes).toContainEqual(["Partner Eevee", "Vaporeon"]);
+    expect(lanes).toContainEqual(["Partner Eevee", "Jolteon"]);
   });
 
-  it("keeps a fully linear chain as 3 separate single-member groups, not one merged group", () => {
+  it("keeps a fully linear chain as one single lane, not split per stage", () => {
     const chain = [
       member(1, 0, "Bulbasaur", 0),
       member(2, 0, "Ivysaur", 1),
       member(3, 0, "Venusaur", 2),
     ];
-    const groups = groupByStage(chain);
-    expect(groups.map((g) => g.map((m) => m.pokemon.display_name))).toEqual([
-      ["Bulbasaur"],
-      ["Ivysaur"],
-      ["Venusaur"],
-    ]);
+    const edges = [edge(1, 0, 2, 0), edge(2, 0, 3, 0)];
+    const lanes = buildEvolutionLanes(chain, edges).map(names);
+    expect(lanes).toEqual([["Bulbasaur", "Ivysaur", "Venusaur"]]);
+  });
+
+  it("gives a species with no evolution at all its own single-member lane", () => {
+    const chain = [member(128, 0, "Tauros", 0)];
+    const lanes = buildEvolutionLanes(chain, []).map(names);
+    expect(lanes).toEqual([["Tauros"]]);
   });
 });
 

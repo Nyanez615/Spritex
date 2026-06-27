@@ -10,7 +10,7 @@ import { mkdtemp, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readOutJson } from "./httpCache.js";
-import type { CosmeticFormRow, EvolutionChainRow, PokemonRow, ShinyMethodRow } from "./deriveShinyMethods.js";
+import type { CosmeticFormRow, EvolutionChainRow, EvolutionEdgeRow, PokemonRow, ShinyMethodRow } from "./deriveShinyMethods.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(HERE, "..", "..", "..");
@@ -22,7 +22,7 @@ function b(value: boolean): number {
 }
 
 async function applyMigrations(db: DatabaseSync): Promise<void> {
-  for (const file of ["001_pokemon.sql", "002_shiny_methods.sql", "003_cosmetic_forms.sql", "004_evolution_chains.sql"]) {
+  for (const file of ["001_pokemon.sql", "002_shiny_methods.sql", "003_cosmetic_forms.sql", "004_evolution_chains.sql", "005_evolution_edges.sql"]) {
     const sql = await readFile(path.join(MIGRATIONS_DIR, file), "utf8");
     db.exec(sql);
   }
@@ -100,11 +100,22 @@ function insertEvolutionChains(db: DatabaseSync, rows: EvolutionChainRow[]): voi
   }
 }
 
+function insertEvolutionEdges(db: DatabaseSync, rows: EvolutionEdgeRow[]): void {
+  const stmt = db.prepare(`
+    INSERT INTO evolution_edges (chain_id, from_pokemon_id, from_form_id, to_pokemon_id, to_form_id)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  for (const r of rows) {
+    stmt.run(r.chain_id, r.from_pokemon_id, r.from_form_id, r.to_pokemon_id, r.to_form_id);
+  }
+}
+
 export async function runBuildStaticDb(): Promise<void> {
   const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
   const shinyMethods = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
   const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
   const evolutionChains = await readOutJson<EvolutionChainRow[]>("evolution-chains.json");
+  const evolutionEdges = await readOutJson<EvolutionEdgeRow[]>("evolution-edges.json");
 
   // Built in a sibling dir of the real target (not os.tmpdir()) so the final
   // rename() is an atomic same-filesystem move, not a cross-volume copy.
@@ -120,6 +131,7 @@ export async function runBuildStaticDb(): Promise<void> {
       insertShinyMethods(db, shinyMethods);
       insertCosmeticForms(db, cosmeticForms);
       insertEvolutionChains(db, evolutionChains);
+      insertEvolutionEdges(db, evolutionEdges);
       db.exec("COMMIT;");
     } finally {
       db.close();
@@ -129,7 +141,7 @@ export async function runBuildStaticDb(): Promise<void> {
     await rm(tmpDir, { recursive: true, force: true });
   }
 
-  console.log(`buildStaticDb: wrote ${pokemon.length} pokemon + ${shinyMethods.length} shiny_methods + ${cosmeticForms.length} cosmetic_forms + ${evolutionChains.length} evolution_chains rows to ${path.relative(REPO_ROOT, TARGET_DB)}`);
+  console.log(`buildStaticDb: wrote ${pokemon.length} pokemon + ${shinyMethods.length} shiny_methods + ${cosmeticForms.length} cosmetic_forms + ${evolutionChains.length} evolution_chains + ${evolutionEdges.length} evolution_edges rows to ${path.relative(REPO_ROOT, TARGET_DB)}`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

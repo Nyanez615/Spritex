@@ -112,6 +112,8 @@ pub fn seed_static_db(rows: &[TestPokemonRow]) -> Connection {
         .expect("apply 003_cosmetic_forms.sql");
     conn.execute_batch(include_str!("../migrations/static/004_evolution_chains.sql"))
         .expect("apply 004_evolution_chains.sql");
+    conn.execute_batch(include_str!("../migrations/static/005_evolution_edges.sql"))
+        .expect("apply 005_evolution_edges.sql");
 
     for row in rows {
         let display_name = if row.display_name.is_empty() { row.name.clone() } else { row.display_name.clone() };
@@ -218,6 +220,25 @@ pub fn seed_evolution_chains(conn: &Connection, rows: &[TestEvolutionChainRow]) 
             rusqlite::params![row.pokemon_id, row.form_id, row.chain_id, row.stage],
         )
         .expect("insert test evolution_chains row");
+    }
+}
+
+#[derive(Default)]
+pub struct TestEvolutionEdgeRow {
+    pub chain_id: i32,
+    pub from_pokemon_id: i32,
+    pub from_form_id: i32,
+    pub to_pokemon_id: i32,
+    pub to_form_id: i32,
+}
+
+pub fn seed_evolution_edges(conn: &Connection, rows: &[TestEvolutionEdgeRow]) {
+    for row in rows {
+        conn.execute(
+            "INSERT INTO evolution_edges (chain_id, from_pokemon_id, from_form_id, to_pokemon_id, to_form_id) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![row.chain_id, row.from_pokemon_id, row.from_form_id, row.to_pokemon_id, row.to_form_id],
+        )
+        .expect("insert test evolution_edges row");
     }
 }
 

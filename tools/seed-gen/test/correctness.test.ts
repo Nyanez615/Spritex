@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readOutJson } from "../src/httpCache.js";
-import type { CosmeticFormRow, EvolutionChainRow, PokemonRow, ShinyMethodRow } from "../src/deriveShinyMethods.js";
+import type { CosmeticFormRow, EvolutionChainRow, EvolutionEdgeRow, PokemonRow, ShinyMethodRow } from "../src/deriveShinyMethods.js";
 
 interface AbilityFact {
   name: string;
@@ -30,6 +30,12 @@ async function chainFor(pokemonId: number, formId = 0): Promise<EvolutionChainRo
   const own = all.find((n) => n.pokemon_id === pokemonId && n.form_id === formId);
   if (!own) return [];
   return all.filter((n) => n.chain_id === own.chain_id);
+}
+
+/** Every real "evolves into" edge originating from (pokemonId, formId). */
+async function edgesFrom(pokemonId: number, formId = 0): Promise<EvolutionEdgeRow[]> {
+  const all = await readOutJson<EvolutionEdgeRow[]>("evolution-edges.json");
+  return all.filter((e) => e.from_pokemon_id === pokemonId && e.from_form_id === formId);
 }
 
 test("Bulbasaur (#1) is SV-huntable at 1/512 via Mass Outbreak + Sparkling Power Lv.3 + Charm", async () => {
@@ -876,4 +882,60 @@ test("Nidoran♀ (#29) and Nidoran♂ (#32) are derived from genuinely distinct 
   assert.notEqual(femaleCitation, maleCitation, "expected distinct citation URLs — same URL would mean the cache collision regressed");
   assert.match(femaleCitation!, /Nidoran%E2%99%80/, "expected Nidoran♀'s citation to point at its own (♀) Bulbapedia URL");
   assert.match(maleCitation!, /Nidoran%E2%99%82/, "expected Nidoran♂'s citation to point at its own (♂) Bulbapedia URL");
+});
+
+// --- evolution_edges: real "evolves into" relationships, not just shared stage membership ---
+// Triggered by direct user feedback: Rattata's evolution-line chip row read as one flat
+// chain (Rattata, Alolan Rattata, then Raticate, Alolan Raticate), which a reader could
+// misinterpret as Rattata being able to evolve into Alolan Raticate. The underlying
+// evolution_chains table only ever tracked WHICH STAGE a member is at, never WHICH
+// specific earlier-stage member it evolves from — insufficient to tell two parallel
+// same-depth lines apart from one member branching into several. These tests assert the
+// new evolution_edges table gets this right for every previously-confirmed chain shape.
+
+test("Rattata (#19) has exactly 2 edges, each strictly within its own form — Kantonian Rattata only to Kantonian Raticate, Alolan Rattata only to Alolan Raticate, never cross-connected. Regression test for the reported bug: an earlier version of the edge-derivation logic treated every undisambiguated evolution_details entry as 'fan out to every variety,' producing a wrong 2x2 cross-connection here, since Rattata's own Kantonian-path detail has no base_form/evolved_form set EVEN THOUGH a second detail explicitly covers the Alolan path", async () => {
+  const kantonianEdges = await edgesFrom(19, 0);
+  const alolanEdges = await edgesFrom(19, 1);
+  assert.deepEqual(kantonianEdges.map((e) => `${e.to_pokemon_id}:${e.to_form_id}`), ["20:0"]);
+  assert.deepEqual(alolanEdges.map((e) => `${e.to_pokemon_id}:${e.to_form_id}`), ["20:1"]);
+});
+
+test("Galarian Meowth (#52, form 2) has exactly one edge, to Perrserker (#863) — not to Persian, and Kantonian/Alolan Meowth's edges go only to their own respective Persian form, not to Perrserker. The 3-way split must stay exactly as undisambiguated as PokéAPI's own data, with zero cross-contamination between the three", async () => {
+  const kantonianEdges = await edgesFrom(52, 0);
+  const alolanEdges = await edgesFrom(52, 1);
+  const galarianEdges = await edgesFrom(52, 2);
+  assert.deepEqual(kantonianEdges.map((e) => `${e.to_pokemon_id}:${e.to_form_id}`), ["53:0"]);
+  assert.deepEqual(alolanEdges.map((e) => `${e.to_pokemon_id}:${e.to_form_id}`), ["53:1"]);
+  assert.deepEqual(galarianEdges.map((e) => `${e.to_pokemon_id}:${e.to_form_id}`), ["863:0"]);
+});
+
+test("Burmy (#412) has 4 edges: one to each Wormadam cloak (#413 form 0/1/2, the female-only outcome) plus one to Mothim (#414, the male-only outcome) — confirmed via PokéAPI's raw evolution_details that the Wormadam edge is genuinely undisambiguated on both sides (Burmy has only 1 form so fanning out is harmless), unlike Rattata's case where a sibling detail disambiguates and fan-out must NOT happen", async () => {
+  const edges = await edgesFrom(412, 0);
+  assert.deepEqual(
+    edges.map((e) => `${e.to_pokemon_id}:${e.to_form_id}`).sort(),
+    ["413:0", "413:1", "413:2", "414:0"],
+  );
+});
+
+test('Pumpkaboo\'s (#710) 4 sizes each have exactly one edge to the SAME-NAMED Gourgeist (#711) size — confirmed real bug scenario: PokéAPI represents this evolution as ONE shared, fully undisambiguated evolution_details entry with BOTH sides having multiple varieties (4 sizes each), so a naive "fan out to every variety on the ambiguous side" rule would wrongly produce a 4x4=16-edge cartesian product (every size able to become every size). The fix pairs same-formName varieties instead (Small->Small, Large->Large, Super->Super, Average/bare->Average/bare)', async () => {
+  for (const formId of [0, 1, 2, 3]) {
+    const edges = await edgesFrom(710, formId);
+    assert.deepEqual(
+      edges.map((e) => `${e.to_pokemon_id}:${e.to_form_id}`),
+      [`711:${formId}`],
+      `expected Pumpkaboo form_id ${formId} to have exactly one edge, to the same-formId (same-named) Gourgeist size`,
+    );
+  }
+});
+
+test("Eevee (#133) and Partner Eevee (form 1) each have exactly 8 edges, one to every Eeveelution — confirmed real and intentional (unlike Rattata's case): both Eevee forms can genuinely evolve into any of the 8 Eeveelutions, so a 2-forms-by-8-targets relationship is correct here, not a guess", async () => {
+  const baseEdges = await edgesFrom(133, 0);
+  const partnerEdges = await edgesFrom(133, 1);
+  assert.equal(baseEdges.length, 8, "expected base Eevee to have 8 edges, one per Eeveelution");
+  assert.equal(partnerEdges.length, 8, "expected Partner Eevee to have 8 edges, one per Eeveelution");
+});
+
+test("Tauros (#128), with no evolution at all, has zero evolution_edges rows in either direction — confirmed it doesn't spuriously connect to anything despite its 3 Paldean breeds sharing one stage", async () => {
+  const all = await readOutJson<EvolutionEdgeRow[]>("evolution-edges.json");
+  assert.ok(all.every((e) => e.from_pokemon_id !== 128 && e.to_pokemon_id !== 128));
 });

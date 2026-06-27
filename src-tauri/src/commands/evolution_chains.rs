@@ -1,21 +1,21 @@
 use crate::commands::pokedex::row_to_pokemon;
 use crate::db::AppState;
-use crate::models::EvolutionChainMember;
+use crate::models::{EvolutionChainData, EvolutionChainEdge, EvolutionChainMember};
 use rusqlite::Connection;
 use tauri::State;
 
-/// Every species/form in the same evolution chain as (pokemon_id, form_id), ordered by stage — for the detail page's evolution-line navigation.
+/// Every species/form in the same evolution chain as (pokemon_id, form_id) plus every real edge between them — for the detail page's evolution-line navigation.
 #[tauri::command]
 pub fn get_evolution_chain(
     state: State<'_, AppState>,
     pokemon_id: i32,
     form_id: i32,
-) -> Result<Vec<EvolutionChainMember>, String> {
+) -> Result<EvolutionChainData, String> {
     let conn = state.static_db.lock().map_err(|e| e.to_string())?;
     get_evolution_chain_impl(&conn, pokemon_id, form_id)
 }
 
-fn get_evolution_chain_impl(conn: &Connection, pokemon_id: i32, form_id: i32) -> Result<Vec<EvolutionChainMember>, String> {
+fn get_evolution_chain_impl(conn: &Connection, pokemon_id: i32, form_id: i32) -> Result<EvolutionChainData, String> {
     let mut stmt = conn
         .prepare(
             "SELECT p.*, ec.stage AS chain_stage FROM pokemon p \
@@ -24,20 +24,42 @@ fn get_evolution_chain_impl(conn: &Connection, pokemon_id: i32, form_id: i32) ->
              ORDER BY ec.stage, p.id, p.form_id",
         )
         .map_err(|e| e.to_string())?;
-    let rows = stmt
+    let members = stmt
         .query_map(rusqlite::params![pokemon_id, form_id], |row| {
             Ok(EvolutionChainMember { pokemon: row_to_pokemon(row)?, stage: row.get("chain_stage")? })
         })
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string())?;
 
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(|e| e.to_string())
+    let mut edge_stmt = conn
+        .prepare(
+            "SELECT from_pokemon_id, from_form_id, to_pokemon_id, to_form_id FROM evolution_edges \
+             WHERE chain_id = (SELECT chain_id FROM evolution_chains WHERE pokemon_id = ?1 AND form_id = ?2)",
+        )
+        .map_err(|e| e.to_string())?;
+    let edges = edge_stmt
+        .query_map(rusqlite::params![pokemon_id, form_id], |row| {
+            Ok(EvolutionChainEdge {
+                from_pokemon_id: row.get("from_pokemon_id")?,
+                from_form_id: row.get("from_form_id")?,
+                to_pokemon_id: row.get("to_pokemon_id")?,
+                to_form_id: row.get("to_form_id")?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(EvolutionChainData { members, edges })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{seed_evolution_chains, seed_static_db, TestEvolutionChainRow, TestPokemonRow};
+    use crate::test_support::{
+        seed_evolution_chains, seed_evolution_edges, seed_static_db, TestEvolutionChainRow, TestEvolutionEdgeRow, TestPokemonRow,
+    };
 
     #[test]
     fn get_evolution_chain_returns_every_member_in_stage_order_regardless_of_which_is_queried() {
@@ -53,7 +75,7 @@ mod tests {
         ]);
 
         for (id, form_id) in [(1, 0), (2, 0), (3, 0)] {
-            let chain = get_evolution_chain_impl(&conn, id, form_id).unwrap();
+            let chain = get_evolution_chain_impl(&conn, id, form_id).unwrap().members;
             assert_eq!(
                 chain.iter().map(|m| m.pokemon.display_name.clone()).collect::<Vec<_>>(),
                 vec!["Bulbasaur", "Ivysaur", "Venusaur"],
@@ -82,7 +104,7 @@ mod tests {
             TestEvolutionChainRow { pokemon_id: 136, form_id: 0, chain_id: 7, stage: 1 },
         ]);
 
-        let chain = get_evolution_chain_impl(&conn, 135, 0).unwrap();
+        let chain = get_evolution_chain_impl(&conn, 135, 0).unwrap().members;
         assert_eq!(chain.len(), 4);
         assert_eq!(chain[0].pokemon.display_name, "Eevee");
         assert_eq!(chain[0].stage, 0, "expected Eevee at stage 0");
@@ -104,7 +126,7 @@ mod tests {
             TestEvolutionChainRow { pokemon_id: 4, form_id: 0, chain_id: 2, stage: 0 },
         ]);
 
-        let chain = get_evolution_chain_impl(&conn, 1, 0).unwrap();
+        let chain = get_evolution_chain_impl(&conn, 1, 0).unwrap().members;
         assert_eq!(chain.len(), 1);
         assert_eq!(chain[0].pokemon.display_name, "Bulbasaur");
     }
@@ -112,7 +134,41 @@ mod tests {
     #[test]
     fn get_evolution_chain_returns_empty_for_a_species_with_no_chain_row() {
         let conn = seed_static_db(&[TestPokemonRow { id: 1, ..Default::default() }]);
-        let chain = get_evolution_chain_impl(&conn, 1, 0).unwrap();
-        assert!(chain.is_empty());
+        let result = get_evolution_chain_impl(&conn, 1, 0).unwrap();
+        assert!(result.members.is_empty());
+        assert!(result.edges.is_empty());
+    }
+
+    #[test]
+    fn get_evolution_chain_returns_edges_scoped_to_the_queried_chain_only() {
+        let conn = seed_static_db(&[
+            TestPokemonRow { id: 19, display_name: "Rattata".into(), ..Default::default() },
+            TestPokemonRow { id: 19, form_id: 1, display_name: "Alolan Rattata".into(), ..Default::default() },
+            TestPokemonRow { id: 20, display_name: "Raticate".into(), ..Default::default() },
+            TestPokemonRow { id: 20, form_id: 1, display_name: "Alolan Raticate".into(), ..Default::default() },
+            TestPokemonRow { id: 1, display_name: "Bulbasaur".into(), ..Default::default() },
+            TestPokemonRow { id: 2, display_name: "Ivysaur".into(), ..Default::default() },
+        ]);
+        seed_evolution_chains(&conn, &[
+            TestEvolutionChainRow { pokemon_id: 19, form_id: 0, chain_id: 7, stage: 0 },
+            TestEvolutionChainRow { pokemon_id: 19, form_id: 1, chain_id: 7, stage: 0 },
+            TestEvolutionChainRow { pokemon_id: 20, form_id: 0, chain_id: 7, stage: 1 },
+            TestEvolutionChainRow { pokemon_id: 20, form_id: 1, chain_id: 7, stage: 1 },
+            TestEvolutionChainRow { pokemon_id: 1, form_id: 0, chain_id: 1, stage: 0 },
+            TestEvolutionChainRow { pokemon_id: 2, form_id: 0, chain_id: 1, stage: 1 },
+        ]);
+        seed_evolution_edges(&conn, &[
+            TestEvolutionEdgeRow { chain_id: 7, from_pokemon_id: 19, from_form_id: 0, to_pokemon_id: 20, to_form_id: 0 },
+            TestEvolutionEdgeRow { chain_id: 7, from_pokemon_id: 19, from_form_id: 1, to_pokemon_id: 20, to_form_id: 1 },
+            TestEvolutionEdgeRow { chain_id: 1, from_pokemon_id: 1, from_form_id: 0, to_pokemon_id: 2, to_form_id: 0 },
+        ]);
+
+        let result = get_evolution_chain_impl(&conn, 19, 0).unwrap();
+        assert_eq!(result.edges.len(), 2, "expected only Rattata's own 2 edges, not Bulbasaur's");
+        assert!(
+            result.edges.iter().any(|e| e.from_form_id == 0 && e.to_form_id == 0)
+                && result.edges.iter().any(|e| e.from_form_id == 1 && e.to_form_id == 1),
+            "expected Kantonian->Kantonian and Alolan->Alolan, never cross-connected",
+        );
     }
 }

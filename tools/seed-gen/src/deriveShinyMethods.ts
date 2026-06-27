@@ -59,7 +59,7 @@
  */
 import { readOutJson, writeOutJson } from "./httpCache.js";
 import type { FetchedCosmeticForm, FetchedSpecies } from "./fetchPokeapi.js";
-import type { EvolutionChainNode } from "./fetchEvolutionChains.js";
+import type { EvolutionChainNode, EvolutionEdge } from "./fetchEvolutionChains.js";
 import { CONCURRENT_UNDISAMBIGUATED_SPECIES, type AcquisitionMethod, type AvailabilityOutput } from "./scrapeBulbapedia.js";
 import type { ShinyLockFact } from "./scrapeShinyLocks.js";
 import type { DynamaxAdventureFact } from "./scrapeDynamaxAdventure.js";
@@ -148,6 +148,14 @@ export interface EvolutionChainRow {
   form_id: number;
   chain_id: number;
   stage: number;
+}
+
+export interface EvolutionEdgeRow {
+  chain_id: number;
+  from_pokemon_id: number;
+  from_form_id: number;
+  to_pokemon_id: number;
+  to_form_id: number;
 }
 
 export interface ShinyMethodRow {
@@ -267,7 +275,7 @@ function applicableMethods(
   });
 }
 
-export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; shinyMethods: ShinyMethodRow[]; cosmeticForms: CosmeticFormRow[]; evolutionChains: EvolutionChainRow[] }> {
+export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; shinyMethods: ShinyMethodRow[]; cosmeticForms: CosmeticFormRow[]; evolutionChains: EvolutionChainRow[]; evolutionEdges: EvolutionEdgeRow[] }> {
   const species = await readOutJson<FetchedSpecies[]>("species.json");
   const { citations, availability } = await readOutJson<AvailabilityOutput>("availability.json");
   const locks = await readOutJson<ShinyLockFact[]>("shiny-locks.json");
@@ -537,12 +545,22 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
     stage: n.stage,
   }));
 
-  console.log(`deriveShinyMethods: ${pokemon.length} pokemon rows, ${shinyMethods.length} shiny_methods rows, ${cosmeticForms.length} cosmetic_forms rows, ${evolutionChains.length} evolution_chains rows`);
+  const evolutionChainEdges = await readOutJson<EvolutionEdge[]>("evolution-chain-edges.json");
+  const evolutionEdges: EvolutionEdgeRow[] = evolutionChainEdges.map((e) => ({
+    chain_id: e.chainId,
+    from_pokemon_id: e.fromPokemonId,
+    from_form_id: e.fromFormId,
+    to_pokemon_id: e.toPokemonId,
+    to_form_id: e.toFormId,
+  }));
+
+  console.log(`deriveShinyMethods: ${pokemon.length} pokemon rows, ${shinyMethods.length} shiny_methods rows, ${cosmeticForms.length} cosmetic_forms rows, ${evolutionChains.length} evolution_chains rows, ${evolutionEdges.length} evolution_edges rows`);
   await writeOutJson("pokemon.json", pokemon);
   await writeOutJson("shiny-methods.json", shinyMethods);
   await writeOutJson("cosmetic-forms.json", cosmeticForms);
   await writeOutJson("evolution-chains.json", evolutionChains);
-  return { pokemon, shinyMethods, cosmeticForms, evolutionChains };
+  await writeOutJson("evolution-edges.json", evolutionEdges);
+  return { pokemon, shinyMethods, cosmeticForms, evolutionChains, evolutionEdges };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

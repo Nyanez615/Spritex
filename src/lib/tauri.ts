@@ -19,6 +19,8 @@ import type { DexProgressBucket } from "./bindings/DexProgressBucket";
 import type { SyncStatus } from "./bindings/SyncStatus";
 import type { SyncMode } from "./bindings/SyncMode";
 import type { CosmeticForm } from "./bindings/CosmeticForm";
+import type { EvolutionChainData } from "./bindings/EvolutionChainData";
+import type { EvolutionChainEdge } from "./bindings/EvolutionChainEdge";
 import type { EvolutionChainMember } from "./bindings/EvolutionChainMember";
 
 export type {
@@ -35,6 +37,8 @@ export type {
   SyncStatus,
   SyncMode,
   CosmeticForm,
+  EvolutionChainData,
+  EvolutionChainEdge,
   EvolutionChainMember,
 };
 
@@ -105,8 +109,8 @@ export const getCosmeticForms = (
 export const getEvolutionChain = (
   pokemonId: number,
   formId: number,
-): Promise<EvolutionChainMember[]> =>
-  isTauri() ? invoke("get_evolution_chain", { pokemonId, formId }) : Promise.resolve([]);
+): Promise<EvolutionChainData> =>
+  isTauri() ? invoke("get_evolution_chain", { pokemonId, formId }) : Promise.resolve({ members: [], edges: [] });
 
 // ── Collection ────────────────────────────────────────────────────────────────
 

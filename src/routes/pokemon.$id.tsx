@@ -97,6 +97,7 @@ import {
   type CollectionEntry,
   type CollectionStatus,
   type CosmeticForm,
+  type EvolutionChainEdge,
   type EvolutionChainMember,
   type Pokemon,
   type ShinyMethod,
@@ -165,103 +166,168 @@ function PokemonNavButton({
   );
 }
 
-/**
- * Every species/form sharing the current Pokémon's evolution chain_id — the
- * whole family, not just what's directly reachable from the current form
- * (e.g. Galarian Meowth's chain also surfaces Kantonian/Alolan Meowth and
- * Persian, not only its own Perrserker evolution), since the goal is quick
- * navigation between related forms, not a strict evolutionary path. Hidden
- * entirely when the chain has nothing but the current species (no evolution
- * line at all).
- */
-/** Groups consecutive same-stage members together — the chain arrives pre-sorted by stage, so this is just a split, not a sort. */
-export function groupByStage(
-  chain: EvolutionChainMember[],
-): EvolutionChainMember[][] {
-  const groups: EvolutionChainMember[][] = [];
-  for (const member of chain) {
-    const lastGroup = groups[groups.length - 1];
-    if (lastGroup && lastGroup[0].stage === member.stage) {
-      lastGroup.push(member);
-    } else {
-      groups.push([member]);
-    }
-  }
-  return groups;
+function evolutionMemberKey(pokemonId: number, formId: number): string {
+  return `${pokemonId}:${formId}`;
 }
 
+/**
+ * Splits a chain family into one row ("lane") per real root-to-leaf
+ * evolution path, instead of grouping by stage alone — stage can't tell two
+ * parallel same-depth lines (Rattata→Raticate vs. Alolan Rattata→Alolan
+ * Raticate) apart from a single member branching into several
+ * (Gloom→Vileplume, Gloom→Bellossom), which read as one misleading chain
+ * when flattened into a single row (confirmed user-reported confusion —
+ * Rattata's row looked like it could lead to Alolan Raticate). Built from
+ * `edges`, the real "evolves into" relationships — `members`' own `stage`
+ * field is unused here, the edge graph alone determines lanes.
+ *
+ * A branch produces one lane per leaf, each lane repeating the shared
+ * prefix (Oddish→Gloom→Vileplume and Oddish→Gloom→Bellossom as two
+ * separate rows) rather than visually deduplicating it — more rows, but
+ * every row reads as an unambiguous, complete, real evolution path on its
+ * own, which is the property that was missing before. A member with no
+ * edges at all (Tauros's breeds, no evolution whatsoever) gets its own
+ * 1-chip lane, same as today.
+ */
+export function buildEvolutionLanes(
+  members: EvolutionChainMember[],
+  edges: EvolutionChainEdge[],
+): EvolutionChainMember[][] {
+  const memberByKey = new Map(
+    members.map((m) => [evolutionMemberKey(m.pokemon.id, m.pokemon.form_id), m]),
+  );
+  const childKeysOf = new Map<string, string[]>();
+  const hasIncomingEdge = new Set<string>();
+  for (const edge of edges) {
+    const fromKey = evolutionMemberKey(edge.from_pokemon_id, edge.from_form_id);
+    const toKey = evolutionMemberKey(edge.to_pokemon_id, edge.to_form_id);
+    if (!childKeysOf.has(fromKey)) childKeysOf.set(fromKey, []);
+    childKeysOf.get(fromKey)!.push(toKey);
+    hasIncomingEdge.add(toKey);
+  }
+
+  const lanes: EvolutionChainMember[][] = [];
+  const visited = new Set<string>();
+
+  function walk(key: string, pathSoFar: EvolutionChainMember[]): void {
+    visited.add(key);
+    const member = memberByKey.get(key);
+    if (!member) return; // edge referenced a member outside this chain — shouldn't happen, skip defensively
+    const path = [...pathSoFar, member];
+    const childKeys = childKeysOf.get(key) ?? [];
+    if (childKeys.length === 0) {
+      lanes.push(path);
+      return;
+    }
+    for (const childKey of childKeys) walk(childKey, path);
+  }
+
+  for (const member of members) {
+    const key = evolutionMemberKey(member.pokemon.id, member.pokemon.form_id);
+    if (!hasIncomingEdge.has(key)) walk(key, []);
+  }
+  // Defensive only — every member should be reachable from a root above via
+  // the loop just run; if an edge somehow failed to resolve, don't silently
+  // drop the member from the chip row entirely.
+  for (const member of members) {
+    const key = evolutionMemberKey(member.pokemon.id, member.pokemon.form_id);
+    if (!visited.has(key)) lanes.push([member]);
+  }
+
+  return lanes;
+}
+
+function EvolutionChip({
+  pokemon,
+  isCurrent,
+  searchContext,
+}: {
+  pokemon: Pokemon;
+  isCurrent: boolean;
+  searchContext: Required<PokedexSearch>;
+}) {
+  if (isCurrent) {
+    return (
+      <Badge
+        variant="outline"
+        className="flex items-center gap-1.5 px-2 py-1 text-sm font-normal"
+      >
+        <img src={pokemon.sprite_url} alt={pokemon.display_name} className="size-6" />
+        {pokemon.display_name}
+      </Badge>
+    );
+  }
+  return (
+    <Button asChild variant="outline" size="sm">
+      <Link
+        to="/pokemon/$id"
+        params={{ id: String(pokemon.id) }}
+        search={{ ...searchContext, form: pokemon.form_id }}
+        className="flex items-center gap-1.5"
+      >
+        <img src={pokemon.sprite_url} alt={pokemon.display_name} className="size-6" />
+        {pokemon.display_name}
+      </Link>
+    </Button>
+  );
+}
+
+/**
+ * Renders every species/form sharing the current Pokémon's evolution
+ * chain_id — the whole family, not just what's directly reachable from the
+ * current form (e.g. Galarian Meowth's chain also surfaces Kantonian/Alolan
+ * Meowth and Persian, not only its own Perrserker evolution), since the
+ * goal is quick navigation between related forms, not a strict
+ * evolutionary path. Hidden entirely when the chain has nothing but the
+ * current species (no evolution line at all) — see the call site.
+ */
 export function EvolutionLineNav({
   chain,
+  edges,
   current,
   searchContext,
 }: {
   chain: EvolutionChainMember[];
+  edges: EvolutionChainEdge[];
   current: Pokemon;
   searchContext: Required<PokedexSearch>;
 }) {
-  // Grouping by stage (not rendering the whole family as one flat row) is
-  // what actually fixes the reported confusion: two parallel single-step
-  // lines (Rattata/Alolan Rattata -> Raticate/Alolan Raticate) or a branch
-  // (Gloom -> Vileplume, Bellossom) used to render as one undifferentiated
-  // row that read like a single bad chain — confirmed via direct query that
-  // the underlying stage data was always correct, only the rendering wasn't.
-  const stageGroups = useMemo(() => groupByStage(chain), [chain]);
+  const lanes = useMemo(() => buildEvolutionLanes(chain, edges), [chain, edges]);
   return (
     <div>
       <h2 className="text-sm font-semibold text-foreground mb-3">
         Evolution Line
       </h2>
-      <div className="flex items-center gap-2 flex-wrap">
-        {stageGroups.map((group, groupIndex) => (
-          <div key={group[0].stage} className="flex items-center gap-2">
-            {groupIndex > 0 && (
-              <ChevronRight className="size-4 text-muted-foreground shrink-0" />
-            )}
-            <div className="flex gap-2 flex-wrap">
-              {group.map(({ pokemon: member }) => {
-                const isCurrent =
-                  member.id === current.id &&
-                  member.form_id === current.form_id;
-                if (isCurrent) {
-                  return (
-                    <Badge
-                      key={`${member.id}-${member.form_id}`}
-                      variant="outline"
-                      className="flex items-center gap-1.5 px-2 py-1 text-sm font-normal"
-                    >
-                      <img
-                        src={member.sprite_url}
-                        alt={member.display_name}
-                        className="size-6"
-                      />
-                      {member.display_name}
-                    </Badge>
-                  );
-                }
-                return (
-                  <Button
-                    key={`${member.id}-${member.form_id}`}
-                    asChild
-                    variant="outline"
-                    size="sm"
-                  >
-                    <Link
-                      to="/pokemon/$id"
-                      params={{ id: String(member.id) }}
-                      search={{ ...searchContext, form: member.form_id }}
-                      className="flex items-center gap-1.5"
-                    >
-                      <img
-                        src={member.sprite_url}
-                        alt={member.display_name}
-                        className="size-6"
-                      />
-                      {member.display_name}
-                    </Link>
-                  </Button>
-                );
-              })}
-            </div>
+      <div className="flex flex-col gap-2">
+        {lanes.map((lane) => (
+          <div
+            // A lane's first or last member alone isn't a unique key: a
+            // branch's lanes share the same root (Oddish→Gloom→Vileplume and
+            // Oddish→Gloom→Bellossom both start with Oddish) and a
+            // many-to-many fan-out's lanes can share the same leaf (Eevee→
+            // Vaporeon and Partner Eevee→Vaporeon both end with Vaporeon) —
+            // only the full path is guaranteed unique per lane.
+            key={lane.map((m) => evolutionMemberKey(m.pokemon.id, m.pokemon.form_id)).join(">")}
+            className="flex items-center gap-2 flex-wrap"
+          >
+            {lane.map((member, memberIndex) => (
+              <div
+                key={evolutionMemberKey(member.pokemon.id, member.pokemon.form_id)}
+                className="flex items-center gap-2"
+              >
+                {memberIndex > 0 && (
+                  <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+                )}
+                <EvolutionChip
+                  pokemon={member.pokemon}
+                  isCurrent={
+                    member.pokemon.id === current.id &&
+                    member.pokemon.form_id === current.form_id
+                  }
+                  searchContext={searchContext}
+                />
+              </div>
+            ))}
           </div>
         ))}
       </div>
@@ -588,11 +654,12 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
           </p>
         )}
 
-        {evolutionChain && evolutionChain.length > 1 && (
+        {evolutionChain && evolutionChain.members.length > 1 && (
           <>
             <Separator />
             <EvolutionLineNav
-              chain={evolutionChain}
+              chain={evolutionChain.members}
+              edges={evolutionChain.edges}
               current={pokemon}
               searchContext={searchContext}
             />

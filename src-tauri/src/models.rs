@@ -321,6 +321,31 @@ pub struct EvolutionChainMember {
     pub stage: i32,
 }
 
+/// One real "evolves into" relationship — `stage` alone can't tell two
+/// parallel same-depth lines (Rattata→Raticate vs. Alolan Rattata→Alolan
+/// Raticate) apart from one member branching into several (Gloom→Vileplume
+/// and Gloom→Bellossom). The frontend's evolution-line chip row uses these
+/// to render each real lineage as its own row instead of one flat,
+/// misleadingly linear-looking list.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct EvolutionChainEdge {
+    pub from_pokemon_id: i32,
+    pub from_form_id: i32,
+    pub to_pokemon_id: i32,
+    pub to_form_id: i32,
+}
+
+/// Everything the evolution-line chip row needs for one chain: every member
+/// (with its stage) plus every real edge between members — returned
+/// together since the frontend always needs both to render correctly.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct EvolutionChainData {
+    pub members: Vec<EvolutionChainMember>,
+    pub edges: Vec<EvolutionChainEdge>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ShinyMethod {
