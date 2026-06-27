@@ -1012,3 +1012,78 @@ test("Partner Pikachu (#25, form 1) and Partner Eevee (#133, form 1) have base s
   assert.equal(partnerEevee.growth_rate, "medium-slow");
   assert.equal(regularEevee.growth_rate, "medium", "expected regular Eevee's own growth rate to stay untouched by the override");
 });
+
+test("Minior (#774) has all 7 Core color forms as cosmetic_forms rows (kind \"red\"/\"orange\"/.../\"violet\", no \"-meteor\" suffix), each with stats matching the real Attack/Sp.Atk/Speed <-> Defense/Sp.Def swap from its Meteor counterpart — regression test for a real bug: PokéAPI's is_battle_only flag is confirmed BACKWARDS for Minior (Meteor forms, the persistent shell state per Bulbapedia, are flagged true; Core forms, the real battle-only/HP-reverting state, are flagged false), so Core forms fell through every acceptance check and were silently dropped entirely before this round", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const miniorCore = cosmeticForms.filter((f) => f.pokemon_id === 774 && !f.kind.endsWith("-meteor"));
+  assert.deepEqual(
+    miniorCore.map((f) => f.kind).sort(),
+    ["blue", "green", "indigo", "orange", "red", "violet", "yellow"],
+  );
+  // "red" is Minior's default variety (Red Meteor), already represented by
+  // the base pokemon row rather than its own cosmetic_forms entry — compare
+  // a non-default color instead, which has both a Core and a Meteor row.
+  const orangeCore = miniorCore.find((f) => f.kind === "orange")!;
+  const orangeMeteor = cosmeticForms.find((f) => f.pokemon_id === 774 && f.kind === "orange-meteor")!;
+  assert.equal(orangeCore.stat_attack, orangeMeteor.stat_defense, "Core's Attack should equal Meteor's Defense (the stats swap)");
+  assert.equal(orangeCore.stat_defense, orangeMeteor.stat_attack, "Core's Defense should equal Meteor's Attack (the stats swap)");
+});
+
+test("Rockruff (#744) is tracked as 2 forms — the regular form (Keen Eye/Vital Spirit/Steadfast) and Own Tempo Rockruff — and only Own Tempo Rockruff has an edge to Dusk Lycanroc; the regular form's edges go only to Lycanroc and Midnight Lycanroc. Regression test for a real bug: Bulbapedia's own Rockruff article confirms only Own Tempo Rockruff can evolve into Dusk Form, but PokéAPI's evolution_details for this chain never sets base_form on ANY of the 3 details (only evolved_form, keyed by time_of_day), so the generic disambiguation-aware fan-out had nothing to disambiguate from — fixed via a small, explicit EVOLUTION_BASE_FORM_OVERRIDES entry", async () => {
+  const regularEdges = await edgesFrom(744, 0);
+  assert.deepEqual(
+    regularEdges.map((e) => `${e.to_pokemon_id}:${e.to_form_id}`).sort(),
+    ["745:0", "745:1"],
+    "expected the regular form to evolve only into Lycanroc and Midnight Lycanroc, never Dusk",
+  );
+  const ownTempoEdges = await edgesFrom(744, 1);
+  assert.deepEqual(
+    ownTempoEdges.map((e) => `${e.to_pokemon_id}:${e.to_form_id}`),
+    ["745:2"],
+    "expected Own Tempo Rockruff to evolve only into Dusk Lycanroc",
+  );
+});
+
+test("Squawkabilly (#931) is tracked as 4 plumage colors; Yellow and White Plumage have Sheer Force as their hidden ability while Green (default) and Blue Plumage have Guts — confirmed via Bulbapedia's own infobox ability layout (\"Guts: Green Plumage and Blue Plumage\" / \"Sheer Force: Yellow Plumage and White Plumage\"), a real difference even though Blue Plumage itself stays untracked (genuinely identical to Green, the default, on every field)", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const squawkabilly = pokemon.filter((p) => p.id === 931);
+  assert.deepEqual(squawkabilly.map((p) => p.display_name).sort(), [
+    "Squawkabilly",
+    "White Plumage Squawkabilly",
+    "Yellow Plumage Squawkabilly",
+  ]);
+  const hiddenAbilityOf = (displayName: string) => {
+    const abilities = JSON.parse(squawkabilly.find((p) => p.display_name === displayName)!.abilities) as Array<{
+      name: string;
+      isHidden: boolean;
+    }>;
+    return abilities.find((a) => a.isHidden)!.name;
+  };
+  assert.equal(hiddenAbilityOf("Squawkabilly"), "guts");
+  assert.equal(hiddenAbilityOf("Yellow Plumage Squawkabilly"), "sheer-force");
+  assert.equal(hiddenAbilityOf("White Plumage Squawkabilly"), "sheer-force");
+});
+
+test("Eternal Floette (#670, form 1) has dramatically higher stats than regular Floette (roughly Florges-tier) and exactly one shiny_methods row — a gift in Legends: Z-A (\"Received from Taunie/Urbain upon completing Main Mission 39 (Only one)\"), nothing in any earlier game where Bulbapedia marks it \"Unreleased\"/\"Unobtainable\" — regression test for two real bugs found together: resolveAnnotation's qualifier-word regex didn't recognize \"Flower\"/\"Flowers\" (so '''Eternal Flower''' never matched the tracked formName \"Eternal\" and silently defaulted to the base form), and NO_NATIVE_AVAILABILITY_MARKERS only recognized \"Unobtainable\", not Floette's own \"Unreleased\" synonym — without both fixes Eternal Floette ended up with regular Floette's wild/masuda/chain-radar rows from every pre-Z-A game instead of zero", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const eternalFloette = pokemon.find((p) => p.id === 670 && p.form_id === 1)!;
+  const regularFloette = pokemon.find((p) => p.id === 670 && p.form_id === 0)!;
+  assert.ok(eternalFloette.stat_special_attack > regularFloette.stat_special_attack + 50);
+  assert.ok(eternalFloette.stat_special_defense > regularFloette.stat_special_defense + 50);
+
+  const methods = await methodsFor(670, 1);
+  assert.equal(methods.length, 1, "expected exactly one shiny_methods row for Eternal Floette");
+  assert.equal(methods[0].game, "legends_za");
+  assert.equal(methods[0].acquisition_method, "gift");
+});
+
+test("Eternal Floette (#670, form 1) has zero evolution_edges rows — it does not evolve from Flabébé or into Florges — confirmed live that PokéAPI's evolution_details for this chain never references \"floette-eternal\" at all on either edge, so without the exclusion the generic ambiguous-fan-out would have wired it into both once it became a tracked variety", async () => {
+  const all = await readOutJson<EvolutionEdgeRow[]>("evolution-edges.json");
+  assert.ok(
+    all.every((e) => !(e.from_pokemon_id === 670 && e.from_form_id === 1) && !(e.to_pokemon_id === 670 && e.to_form_id === 1)),
+  );
+  assert.ok(
+    all.some((e) => e.from_pokemon_id === 670 && e.from_form_id === 0 && e.to_pokemon_id === 671),
+    "expected the real Floette (base form) -> Florges edge to still exist",
+  );
+});

@@ -132,7 +132,8 @@ const ANNOTATION_NAME_SYNONYMS: Record<string, string> = {
  * it refers to. Confirmed live against real wikitext that the trailing
  * qualifier word varies by species — "Form"/"Forms" (most regional forms,
  * Lycanroc's "Midday/Midnight Forms"), "Cloak"/"Cloaks" (Wormadam), "Size"/
- * "Sizes"/"Variety"/"Varieties" (Pumpkaboo/Gourgeist) — and that some
+ * "Sizes"/"Variety"/"Varieties" (Pumpkaboo/Gourgeist), "Flower"/"Flowers"
+ * (Floette's "Blue/Red/Yellow Flowers"/"Eternal Flower") — and that some
  * annotations have no qualifier word at all (Indeedee/Basculegion/Meowstic/
  * Oinkologne's bare "Male"/"Female"). An optional trailing parenthetical
  * (Tauros's breed qualifier) is stripped before extracting the qualifier
@@ -194,7 +195,7 @@ function resolveAnnotation(
 ): number[] {
   const rendered = renderWikitextToPlainText(boldText);
   const withoutParen = rendered.replace(/\s*\([^)]*\)\s*$/, "").trim();
-  const qualifierMatch = withoutParen.match(/^(.+?)\s+(?:Forms?|Cloaks?|Variet(?:y|ies)|Sizes?)$/i);
+  const qualifierMatch = withoutParen.match(/^(.+?)\s+(?:Forms?|Cloaks?|Variet(?:y|ies)|Sizes?|Flowers?)$/i);
   const namesText = qualifierMatch ? qualifierMatch[1] : withoutParen;
   if (!namesText) return [0]; // not a recognizable annotation at all — treat as the base form
   if (namesText.toLowerCase() === "all") return varieties.map((v) => v.formId); // "All Forms"/"All Sizes"
@@ -323,6 +324,13 @@ function isWildSegment(segmentText: string): boolean {
  */
 const NO_NATIVE_AVAILABILITY_MARKERS = [
   /^unobtainable$/i,
+  // Confirmed live a distinct, synonymous marker from "Unobtainable" — same
+  // meaning, different word — on Floette's X/Y and USUM entries: "Unreleased
+  // ('''Eternal Flower''')" (Eternal Flower wasn't legitimately obtainable
+  // until Legends: Z-A, while the entry's OTHER bold-annotated forms are
+  // real). Found auditing the Shellos/Gastrodon/Arceus "deferred" claims for
+  // other missed cases, not the original first-50-species audit.
+  /^unreleased$/i,
   /^\[\[Pokémon Bank\]\]$/i,
   /^\{\{g\|HOME\}\}$/i,
   /^\[\[Poké Transfer\]\]$/i,

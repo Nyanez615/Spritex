@@ -146,13 +146,38 @@ function formNameOf(key: FormKey, speciesById: Map<number, FetchedSpecies>): str
  *   obtained by evolving any Ursaring). Confirmed live: without this
  *   exclusion, Ursaring wrongly got an edge to Bloodmoon Ursaluna alongside
  *   its real edge to regular Ursaluna.
+ * - Eternal Floette ("Eternal"): does not evolve from Flabébé or into
+ *   Florges — confirmed live that PokéAPI's evolution_details for this
+ *   chain never references "floette-eternal" at all (neither base_form nor
+ *   evolved_form on either edge), so without this exclusion the existing
+ *   ambiguous-fan-out logic would wrongly wire it into both edges once it
+ *   becomes a tracked variety (GROUP_A_FORM_NAMES' "eternal" entry).
  */
-const EVOLUTION_EDGE_EXCLUDED_FORM_NAMES = new Set(["Starter", "Bloodmoon"]);
+const EVOLUTION_EDGE_EXCLUDED_FORM_NAMES = new Set(["Starter", "Bloodmoon", "Eternal"]);
 
 function isExcludedFromEvolutionEdges(key: FormKey, speciesById: Map<number, FetchedSpecies>): boolean {
   const formName = formNameOf(key, speciesById);
   return formName !== null && EVOLUTION_EDGE_EXCLUDED_FORM_NAMES.has(formName);
 }
+
+/**
+ * Manual base_form overrides for the rare case where Bulbapedia documents a
+ * real ability-gated evolution outcome that PokéAPI's own evolution_details
+ * never encodes at all (confirmed live: every Rockruff->Lycanroc detail
+ * sets only `evolved_form`, keyed by time_of_day — none of the 3 ever sets
+ * `base_form`, so the generic disambiguation-aware fan-out above has
+ * nothing to disambiguate from). Bulbapedia's own Rockruff article: Rockruff
+ * with Keen Eye/Vital Spirit/Steadfast evolve into Midday or Midnight
+ * Lycanroc; only the separate Own Tempo Rockruff evolves into Dusk Lycanroc.
+ * Keyed by the evolved variety's apiPokemonName, since that's the one
+ * unambiguous fact PokéAPI's `evolved_form` field already gives us per
+ * detail. The same precedent rosterFacts.ts already sets for real facts
+ * PokéAPI's structured data can't express — small, explicit, cited, not a
+ * generalized mechanism, since this is currently the only known case.
+ */
+const EVOLUTION_BASE_FORM_OVERRIDES: Record<string, string> = {
+  "lycanroc-dusk": "rockruff-own-tempo",
+};
 
 /**
  * Records one real evolves-into relationship per evolution_details entry —
@@ -251,19 +276,32 @@ function walkChain(
   // Galarian->Perrserker edge specifies base_form, so Persian's own
   // undisambiguated detail means "the leftover default (Kantonian) only,"
   // not "every Meowth variety." Computed once per node, used by every child.
-  const anyFromDisambiguated = node.evolves_to.some((child) => child.evolution_details.some((d) => d.base_form));
+  // A detail covered by EVOLUTION_BASE_FORM_OVERRIDES counts as disambiguated
+  // too, the same as if PokéAPI's own base_form had been set (Rockruff's
+  // Dusk-Lycanroc detail disambiguates the parent just as much as a real
+  // base_form would — see the override's own comment for why PokéAPI never
+  // sets one here).
+  const anyFromDisambiguated = node.evolves_to.some((child) =>
+    child.evolution_details.some((d) => d.base_form || (d.evolved_form && EVOLUTION_BASE_FORM_OVERRIDES[d.evolved_form.name])),
+  );
 
   for (const child of node.evolves_to) {
     const childBareKey = nameIndex.get(child.species.name);
     const anyToDisambiguated = child.evolution_details.some((d) => d.evolved_form);
     for (const detail of child.evolution_details) {
-      const fromKey = detail.base_form ? nameIndex.get(detail.base_form.name) : bareKey;
+      const overrideBaseFormName = detail.evolved_form && EVOLUTION_BASE_FORM_OVERRIDES[detail.evolved_form.name];
+      const fromKey = detail.base_form
+        ? nameIndex.get(detail.base_form.name)
+        : overrideBaseFormName
+          ? nameIndex.get(overrideBaseFormName)
+          : bareKey;
       const toKey = detail.evolved_form ? nameIndex.get(detail.evolved_form.name) : childBareKey;
       if (detail.base_form && !fromKey) unmatched.count++;
+      if (overrideBaseFormName && !fromKey) unmatched.count++;
       if (detail.evolved_form && !toKey) unmatched.count++;
       upsert(out, chainId, fromKey, depth);
       upsert(out, chainId, toKey, depth + 1);
-      const fromAmbiguous = !detail.base_form && !anyFromDisambiguated;
+      const fromAmbiguous = !detail.base_form && !overrideBaseFormName && !anyFromDisambiguated;
       const toAmbiguous = !detail.evolved_form && !anyToDisambiguated;
       recordEdge(edges, chainId, fromKey, toKey, fromAmbiguous, toAmbiguous, speciesById);
     }

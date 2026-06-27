@@ -119,7 +119,20 @@ function resolveCosmeticBaseFormId(kind: string, varieties: FetchedVariety[]): n
  * (sprite data only, no stat override) attached to that one variety. This
  * pipeline's whole non-default-variety-based detection mechanism doesn't
  * apply to that shape; modeling it correctly needs separate, dedicated
- * pipeline work, not a forced fit here.
+ * pipeline work, not a forced fit here. Re-verified live a second time
+ * (not just re-cited) when Basculin turned up as a real miss with this
+ * exact write-up's shape of justification: confirmed Shellos/Gastrodon/
+ * Arceus/Silvally genuinely still have only one PokéAPI variety each (a
+ * second variety 404s), so the structural argument holds — but ALSO
+ * confirmed two sharper, independent reasons even if that ever changed:
+ * Shellos/Gastrodon's West/East Sea split has zero ability/stat/type
+ * difference at all (Bulbapedia's own infobox — purely cosmetic, unlike
+ * Basculin's distinct abilities), and Arceus/Silvally's Plate/Memory type
+ * change is a real-time, held-item-driven recalculation with no discrete
+ * trigger or persistent state at all (Bulbapedia's "Type change" article
+ * groups Multitype/RKS System with Protean, which changes every turn) — not
+ * even the same shape as Mega/Gmax's "in battle, reverts after," let alone
+ * a real form `cosmetic_forms` could meaningfully snapshot.
  */
 const GROUP_A_FORM_NAMES = new Set([
   "attack", "defense", "speed", // deoxys (normal is the default variety)
@@ -154,7 +167,54 @@ const GROUP_A_FORM_NAMES = new Set([
   // "basculin-white-striped") — a real mechanical difference even without a stat
   // difference, unlike Shellos/Gastrodon/Arceus/Silvally below, which really do have
   // only one PokéAPI variety each (re-verified live, not just re-cited).
+  "own-tempo", // rockruff (the regular Keen Eye/Vital Spirit/Steadfast form is the
+  // default variety) — confirmed via Bulbapedia's own infobox/evolution prose: only
+  // Own Tempo Rockruff can evolve into Dusk Form Lycanroc; the other 3 abilities can
+  // only reach Midday/Midnight. A real, distinct primary-ability difference (own vs.
+  // the regular 1+2 ability layout). See EVOLUTION_BASE_FORM_OVERRIDES in
+  // fetchEvolutionChains.ts — PokéAPI's evolution_details for this chain never sets
+  // base_form at all (only evolved_form, keyed by time_of_day), so the generic
+  // ambiguous-fan-out logic there can't disambiguate this on its own.
+  "yellow-plumage", "white-plumage", // squawkabilly (green-plumage is the default
+  // variety; blue-plumage stays excluded below — confirmed identical to green's
+  // ability set, purely cosmetic) — confirmed via Bulbapedia's own infobox: Green/Blue
+  // Plumage share Guts as their hidden ability, Yellow/White Plumage have Sheer Force
+  // instead. A real hidden-ability difference, the same bar Basculin's stripes clear.
+  // Squawkabilly itself never evolves, so no evolution-edge concern here.
+  "eternal", // floette (any colored-flower variety is the default) — Eternal Flower
+  // Floette is a real, Bulbapedia-confirmed individual obtainable since Legends: Z-A
+  // ("Received from Taunie/Urbain upon completing Main Mission 39 (Only one)"), with
+  // dramatically higher stats than a colored-flower Floette (roughly Florges-tier) —
+  // every earlier game's wikitext already marks it "Unreleased"/"Unobtainable
+  // ('''Eternal Flower''')", confirming this isn't a new ability for it, just newly
+  // obtainable. It does not evolve from Flabébé or into Florges (see
+  // EVOLUTION_EDGE_EXCLUDED_FORM_NAMES in fetchEvolutionChains.ts) — confirmed live
+  // that PokéAPI's evolution_details for this chain never references it at all, so
+  // without that exclusion the existing ambiguous-fan-out logic would wrongly wire it
+  // into both edges once it's a tracked variety.
 ]);
+
+/**
+ * Minior's exposed-core forms ("Red Core Minior", etc.) — confirmed real and
+ * battle-only/HP-reverting via Bulbapedia ("It is normally in its Meteor
+ * Form, but when its HP is below half, its core becomes exposed... It will
+ * revert back to its Meteor Form if its HP is restored above 50%"), the
+ * same shape as Zen Mode/Castform/Cherrim already routed to cosmetic_forms.
+ * But PokéAPI's own `is_battle_only` flag is confirmed BACKWARDS for this
+ * species specifically: the persistent Meteor-shell forms ("red-meteor"
+ * etc.) are flagged `is_battle_only: true`, while the actual battle-only
+ * Core forms ("red" etc.) are flagged `false` — confirmed live via direct
+ * fetch of both. Without this override, Core forms fall through the
+ * regular acceptance gate (no regional adjective, not in
+ * GROUP_A_FORM_NAMES) and get silently dropped — found via an exhaustive
+ * scan of every currently-dropped non-default variety across the dataset,
+ * the same audit that caught Basculin. Real stat redistribution confirmed
+ * (e.g. Red Core: 100/60/100/60/120 vs. Red Meteor: 60/100/60/100/60 —
+ * same total, Attack/Sp.Atk/Speed and Defense/Sp.Def swap), so these are
+ * tracked via cosmetic_forms (battle-only, reverting) rather than as
+ * GROUP_A_FORM_NAMES full `pokemon` rows.
+ */
+const FORCE_COSMETIC_FORM_NAMES = new Set(["red", "orange", "yellow", "green", "blue", "indigo", "violet"]);
 
 /**
  * Per-variety overrides for the two species-level-only fields PokéAPI's
@@ -508,7 +568,9 @@ function cosmeticFormKind(form: PokeApiForm): CosmeticFormKind | undefined {
     return "mega";
   }
   if (form.form_name === "gmax") return "gmax";
-  if (form.is_battle_only && form.form_name !== "eternamax") return form.form_name;
+  if ((form.is_battle_only || FORCE_COSMETIC_FORM_NAMES.has(form.form_name)) && form.form_name !== "eternamax") {
+    return form.form_name;
+  }
   return undefined;
 }
 
@@ -543,8 +605,16 @@ async function fetchVarietyDetail(
     // misleadingly marks a few real, persistent forms this way (Crowned
     // Zacian/Zamazenta), confirmed live against Bulbapedia. Mega/Gmax are
     // never in that list (they're real cosmetic-only transformations), so
-    // this never short-circuits the existing Mega/Gmax path.
-    if (!GROUP_A_FORM_NAMES.has(form.form_name) && (form.is_battle_only || form.is_mega)) {
+    // this never short-circuits the existing Mega/Gmax path. FORCE_COSMETIC_
+    // FORM_NAMES is the opposite override — Minior's Core forms are real,
+    // battle-only/reverting states that PokéAPI flags `is_battle_only:
+    // false` (confirmed backwards), so without this they'd fall through to
+    // the regional/Group A check below and get silently dropped instead of
+    // routed to cosmetic_forms.
+    if (
+      !GROUP_A_FORM_NAMES.has(form.form_name) &&
+      (form.is_battle_only || form.is_mega || FORCE_COSMETIC_FORM_NAMES.has(form.form_name))
+    ) {
       const kind = cosmeticFormKind(form);
       if (!kind) return {}; // other battle-only cosmetic (Crowned, Eternamax, ...) — not modeled
       return {
