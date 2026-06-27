@@ -978,6 +978,26 @@ test("Bloodmoon Ursaluna (#901, form 1) has zero evolution_edges rows — confir
   );
 });
 
+test("Basculin (#550) is tracked as 3 distinct forms (Red/Blue/White-Striped) with identical stats but genuinely different primary abilities (Reckless/Rock Head/Rattled, confirmed live via PokéAPI) — only White-Striped (form 2) has any evolution_edges row, fanning out to both Basculegion and Female Basculegion, since Bulbapedia confirms only White-Striped can evolve this way (PokéAPI's evolution_details.base_form is explicitly \"basculin-white-striped\") — regression test for a real gap: this 3-way split was initially missed by the Group A form audit, leaving Basculin->Basculegion's edge silently dropped entirely (an unmatched base_form name) rather than wrongly attributed", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const basculinForms = pokemon.filter((p) => p.id === 550);
+  assert.equal(basculinForms.length, 3, "expected Red/Blue/White-Striped all tracked as separate rows");
+  const abilitiesOf = (formId: number) =>
+    (JSON.parse(basculinForms.find((p) => p.form_id === formId)!.abilities) as Array<{ name: string }>)[0].name;
+  assert.equal(abilitiesOf(0), "reckless");
+  assert.equal(abilitiesOf(1), "rock-head");
+  assert.equal(abilitiesOf(2), "rattled");
+
+  assert.deepEqual(await edgesFrom(550, 0), [], "expected Red-Striped to have no evolution edges");
+  assert.deepEqual(await edgesFrom(550, 1), [], "expected Blue-Striped to have no evolution edges");
+  const whiteStripedEdges = await edgesFrom(550, 2);
+  assert.deepEqual(
+    whiteStripedEdges.map((e) => `${e.to_pokemon_id}:${e.to_form_id}`).sort(),
+    ["902:0", "902:1"],
+    "expected White-Striped to evolve into both Basculegion and Female Basculegion",
+  );
+});
+
 test("Partner Pikachu (#25, form 1) and Partner Eevee (#133, form 1) have base stats confirmed against Bulbapedia's \"Partner Pokémon\" article (45/80/50/75/60/120 and 65/75/70/65/85/75 respectively — both higher than their regular counterparts \"to compensate for their inability to evolve\"), and Partner Eevee's gender_rate (4, an effective 1:1 ratio) and growth_rate (medium-slow) differ from regular Eevee's (1, medium) — the one species-level-only field PokéAPI can't express per-variety, overridden via a small cited exception", async () => {
   const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
   const partnerPikachu = pokemon.find((p) => p.id === 25 && p.form_id === 1)!;

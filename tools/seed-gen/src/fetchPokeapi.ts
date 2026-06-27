@@ -105,7 +105,10 @@ function resolveCosmeticBaseFormId(kind: string, varieties: FetchedVariety[]): n
  * Evolution/encounter-locked, confirmed "cannot change forms": Lycanroc,
  * Toxtricity, Wormadam's cloaks, Urshifu's styles, Pumpkaboo/Gourgeist's
  * sizes, the 4 mechanical-gender-difference species (Basculegion/Indeedee/
- * Meowstic/Oinkologne), and Ursaluna Bloodmoon.
+ * Meowstic/Oinkologne), Ursaluna Bloodmoon, and Basculin's 3 stripe colors
+ * (fixed for an individual's life, like Lycanroc's forme — initially missed
+ * by this audit despite having its own distinct-ability real form split;
+ * caught later via a live PokéAPI cross-check, not a code-review pass).
  *
  * Deliberately deferred, not silently dropped: Shellos/Gastrodon's East/
  * West Sea split and Arceus/Silvally's type-changing Plate/Memory formes
@@ -142,6 +145,15 @@ const GROUP_A_FORM_NAMES = new Set([
   "small", "large", "super", // pumpkaboo / gourgeist (average is the default variety)
   "female", // basculegion / indeedee / meowstic / oinkologne
   "bloodmoon", // ursaluna
+  "white-striped", "blue-striped", // basculin (red-striped is the default variety) — a
+  // real, Bulbapedia-documented 3-way form split (own infobox forme list, "Red-Striped
+  // Form"/"Blue-Striped Form"/"White-Striped Form") initially missed by this audit:
+  // identical stats/types across all 3, but each has its OWN distinct primary ability
+  // (Reckless/Rock Head/Rattled, confirmed live via PokéAPI) and only White-Striped can
+  // evolve into Basculegion (PokéAPI's evolution_details.base_form is explicitly
+  // "basculin-white-striped") — a real mechanical difference even without a stat
+  // difference, unlike Shellos/Gastrodon/Arceus/Silvally below, which really do have
+  // only one PokéAPI variety each (re-verified live, not just re-cited).
 ]);
 
 /**

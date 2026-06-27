@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -293,43 +293,57 @@ export function EvolutionLineNav({
   searchContext: Required<PokedexSearch>;
 }) {
   const lanes = useMemo(() => buildEvolutionLanes(chain, edges), [chain, edges]);
+  // Every lane shares one grid, each stage in its own column (member,
+  // chevron, member, chevron, ...) — column N sizes to the widest chip
+  // any lane places there, so e.g. Raticate/Alolan Raticate (column 3)
+  // start at the same x position regardless of Rattata/Alolan Rattata's
+  // (column 1) differing widths, rather than each lane's flex row sizing
+  // independently. Lanes shorter than the longest one (a branch's shared
+  // prefix vs. its longer continuation) simply leave their row's trailing
+  // columns empty — explicit gridRow/gridColumn placement below, not
+  // relying on auto-flow, so a short lane never bleeds into the next row.
+  const maxLaneLength = Math.max(...lanes.map((lane) => lane.length));
   return (
     <div>
       <h2 className="text-sm font-semibold text-foreground mb-3">
         Evolution Line
       </h2>
-      <div className="flex flex-col gap-2">
-        {lanes.map((lane) => (
-          <div
-            // A lane's first or last member alone isn't a unique key: a
-            // branch's lanes share the same root (Oddish→Gloom→Vileplume and
-            // Oddish→Gloom→Bellossom both start with Oddish) and a
-            // many-to-many fan-out's lanes can share the same leaf (Eevee→
-            // Vaporeon and Partner Eevee→Vaporeon both end with Vaporeon) —
-            // only the full path is guaranteed unique per lane.
-            key={lane.map((m) => evolutionMemberKey(m.pokemon.id, m.pokemon.form_id)).join(">")}
-            className="flex items-center gap-2 flex-wrap"
-          >
-            {lane.map((member, memberIndex) => (
-              <div
-                key={evolutionMemberKey(member.pokemon.id, member.pokemon.form_id)}
-                className="flex items-center gap-2"
-              >
+      <div
+        className="grid gap-x-2 gap-y-2 overflow-x-auto"
+        style={{ gridTemplateColumns: `repeat(${maxLaneLength * 2 - 1}, max-content)` }}
+      >
+        {lanes.flatMap((lane, laneIndex) =>
+          lane.map((member, memberIndex) => {
+            // laneIndex-prefixed: a member can appear in more than one lane
+            // (Eevee's many-to-many fan-out puts Vaporeon in both the Eevee
+            // lane and the Partner Eevee lane), so the bare member key alone
+            // isn't unique here the way it is for the per-lane container key
+            // above.
+            const key = `${laneIndex}-${evolutionMemberKey(member.pokemon.id, member.pokemon.form_id)}`;
+            return (
+              <Fragment key={key}>
                 {memberIndex > 0 && (
-                  <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+                  <div
+                    className="flex items-center"
+                    style={{ gridRow: laneIndex + 1, gridColumn: memberIndex * 2 }}
+                  >
+                    <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+                  </div>
                 )}
-                <EvolutionChip
-                  pokemon={member.pokemon}
-                  isCurrent={
-                    member.pokemon.id === current.id &&
-                    member.pokemon.form_id === current.form_id
-                  }
-                  searchContext={searchContext}
-                />
-              </div>
-            ))}
-          </div>
-        ))}
+                <div style={{ gridRow: laneIndex + 1, gridColumn: memberIndex * 2 + 1 }}>
+                  <EvolutionChip
+                    pokemon={member.pokemon}
+                    isCurrent={
+                      member.pokemon.id === current.id &&
+                      member.pokemon.form_id === current.form_id
+                    }
+                    searchContext={searchContext}
+                  />
+                </div>
+              </Fragment>
+            );
+          }),
+        )}
       </div>
     </div>
   );
