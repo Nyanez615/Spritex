@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -166,6 +166,23 @@ function PokemonNavButton({
       </Link>
     </Button>
   );
+}
+
+/**
+ * True if a Left/Right keydown should be ignored for prev/next species
+ * navigation — while the sprite gallery is open (it already binds the same
+ * keys to cycle sprites, see SpriteGalleryDialog below), while focus is on a
+ * form field (the stat simulator's level input, a Select trigger), or while
+ * focus is trapped inside any dialog (e.g. "Mark as caught"), so cursor-
+ * movement and dropdown-navigation keystrokes there aren't hijacked into a
+ * page jump.
+ */
+export function shouldSkipArrowNav(activeElement: Element | null, galleryOpen: boolean): boolean {
+  if (galleryOpen) return true;
+  if (!(activeElement instanceof HTMLElement)) return false;
+  const tag = activeElement.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || activeElement.isContentEditable) return true;
+  return Boolean(activeElement.closest('[role="dialog"]'));
 }
 
 function evolutionMemberKey(pokemonId: number, formId: number): string {
@@ -402,6 +419,7 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
   const pokemonId = Number(id);
   const formId = form;
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   // Arrived via a grid card click: rawSearchContext carries the grid's
   // active filters/sort, so next/prev walks that same context. Arrived with
   // no context (direct URL, command palette, hunt, quick-counter): every
@@ -530,6 +548,21 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
   // reflects what's actually displayed in Profile/Stats from first render.
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  // Left/Right jump to the prev/next species, mirroring the header chevron
+  // buttons.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (shouldSkipArrowNav(document.activeElement, galleryOpen)) return;
+      if (e.key === "ArrowLeft" && prevPokemon) {
+        navigate({ to: "/pokemon/$id", params: { id: String(prevPokemon.id) }, search: { ...searchContext, form: prevPokemon.form_id } });
+      }
+      if (e.key === "ArrowRight" && nextPokemon) {
+        navigate({ to: "/pokemon/$id", params: { id: String(nextPokemon.id) }, search: { ...searchContext, form: nextPokemon.form_id } });
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [galleryOpen, prevPokemon, nextPokemon, searchContext, navigate]);
   // Set when the tracked sprite is a Mega/Gmax cosmetic form — drives
   // displayPokemon below, which overrides only the fields that genuinely
   // differ for that form (types/stats/abilities/etc.), so the Profile/Stats

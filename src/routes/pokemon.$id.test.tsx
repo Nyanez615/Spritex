@@ -7,6 +7,7 @@ import {
   buildSpriteVariants,
   CollectionPanel,
   ProfileSection,
+  shouldSkipArrowNav,
   SpriteGalleryDialog,
   StatsSection,
 } from "./pokemon.$id";
@@ -242,6 +243,42 @@ describe("SpriteGalleryDialog", () => {
       />,
     );
     expect(screen.queryByText(/1 \/ 1/)).not.toBeInTheDocument();
+  });
+});
+
+describe("shouldSkipArrowNav", () => {
+  it("does not skip when nothing is focused and the gallery is closed", () => {
+    expect(shouldSkipArrowNav(null, false)).toBe(false);
+  });
+
+  it("skips while the sprite gallery is open, regardless of focus", () => {
+    expect(shouldSkipArrowNav(null, true)).toBe(true);
+    expect(shouldSkipArrowNav(document.createElement("button"), true)).toBe(true);
+  });
+
+  it("skips when focus is on a text input, a number input, or a select — the stat simulator's level field and dropdowns", () => {
+    expect(shouldSkipArrowNav(document.createElement("input"), false)).toBe(true);
+    expect(shouldSkipArrowNav(document.createElement("textarea"), false)).toBe(true);
+    expect(shouldSkipArrowNav(document.createElement("select"), false)).toBe(true);
+  });
+
+  it("skips when focus is on a contentEditable element", () => {
+    const div = document.createElement("div");
+    Object.defineProperty(div, "isContentEditable", { value: true });
+    expect(shouldSkipArrowNav(div, false)).toBe(true);
+  });
+
+  it("skips when focus is trapped inside any open dialog (e.g. the \"Mark as caught\" dialog), even on a plain button", () => {
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const button = document.createElement("button");
+    dialog.appendChild(button);
+    expect(shouldSkipArrowNav(button, false)).toBe(true);
+  });
+
+  it("does not skip for an ordinary focused element outside any dialog, e.g. a nav button", () => {
+    expect(shouldSkipArrowNav(document.createElement("button"), false)).toBe(false);
+    expect(shouldSkipArrowNav(document.createElement("a"), false)).toBe(false);
   });
 });
 
