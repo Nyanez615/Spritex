@@ -16,6 +16,10 @@ pub(crate) fn row_to_cosmetic_form(row: &Row) -> rusqlite::Result<CosmeticForm> 
         sprite_crop_y: row.get("sprite_crop_y")?,
         sprite_crop_width: row.get("sprite_crop_width")?,
         sprite_crop_height: row.get("sprite_crop_height")?,
+        sprite_crop_x_shiny: row.get("sprite_crop_x_shiny")?,
+        sprite_crop_y_shiny: row.get("sprite_crop_y_shiny")?,
+        sprite_crop_width_shiny: row.get("sprite_crop_width_shiny")?,
+        sprite_crop_height_shiny: row.get("sprite_crop_height_shiny")?,
         mega_stone_item: row.get("mega_stone_item")?,
         types: row.get("types")?,
         height: row.get("height")?,
@@ -126,5 +130,29 @@ mod tests {
         assert_eq!(forms[0].sprite_crop_y, 0.0);
         assert_eq!(forms[0].sprite_crop_width, 1.0);
         assert_eq!(forms[0].sprite_crop_height, 1.0);
+    }
+
+    #[test]
+    fn get_cosmetic_forms_round_trips_shiny_sprite_crop_independently_of_the_standard_one() {
+        // Regression test for a real user-reported bug (Hisuian Lilligant):
+        // a shiny sprite's own alpha shape can genuinely differ from its
+        // non-shiny counterpart's, so the shiny crop must be stored and
+        // read back independently, never assumed equal to the standard one.
+        let conn = seed_static_db(&[TestPokemonRow { id: 201, ..Default::default() }]);
+        seed_cosmetic_forms(&conn, &[
+            TestCosmeticFormRow {
+                pokemon_id: 201, form_id: 0, kind: "b".into(), display_name: "Unown B".into(),
+                sprite_crop_x: 0.385, sprite_crop_y: 0.333, sprite_crop_width: 0.229, sprite_crop_height: 0.333,
+                sprite_crop_x_shiny: 0.147, sprite_crop_y_shiny: 0.0, sprite_crop_width_shiny: 0.703, sprite_crop_height_shiny: 1.0,
+                ..Default::default()
+            },
+        ]);
+
+        let forms = get_cosmetic_forms_impl(&conn, 201, 0).unwrap();
+        assert_eq!(forms[0].sprite_crop_x, 0.385, "the standard crop should be unaffected");
+        assert_eq!(forms[0].sprite_crop_x_shiny, 0.147);
+        assert_eq!(forms[0].sprite_crop_y_shiny, 0.0);
+        assert_eq!(forms[0].sprite_crop_width_shiny, 0.703);
+        assert_eq!(forms[0].sprite_crop_height_shiny, 1.0);
     }
 }

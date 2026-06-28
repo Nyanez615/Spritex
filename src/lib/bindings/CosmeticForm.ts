@@ -27,10 +27,17 @@ export type CosmeticForm = { id: number, pokemon_id: number, form_id: number, ki
  * Unown ~23%x33% filled, Arceus ~71%x76% filled) — too inconsistent for a
  * single uniform CSS zoom to safely correct without clipping some
  * sprites. The frontend uses this to zoom each sprite in by its own real
- * amount. Also applies to shiny_sprite_url — a shiny sprite is a pure
- * palette recolor sharing the same alpha shape, confirmed live.
+ * amount.
  */
 sprite_crop_x: number, sprite_crop_y: number, sprite_crop_width: number, sprite_crop_height: number, 
+/**
+ * Same idea, measured separately from shiny_sprite_url — NOT reused
+ * from sprite_crop_x/y/width/height. A real, confirmed bug (Hisuian
+ * Lilligant) proved a shiny recolor's alpha shape can genuinely differ
+ * from its non-shiny counterpart's, not always a pure palette swap on
+ * the same shape.
+ */
+sprite_crop_x_shiny: number, sprite_crop_y_shiny: number, sprite_crop_width_shiny: number, sprite_crop_height_shiny: number, 
 /**
  * PokéAPI item slug, e.g. "venusaurite" — None for Gigantamax (no held item).
  */

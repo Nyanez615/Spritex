@@ -926,18 +926,25 @@ export function buildSpriteVariants(
   // species/variety that ever falls through to a padded basic sprite gets
   // the same fix automatically, the same reasoning cosmetic_forms sprites
   // already get it for.
+  // Each of the 4 sprite slots gets its OWN crop, not shared — a real,
+  // confirmed bug (Hisuian Lilligant) proved a shiny recolor's alpha shape
+  // can genuinely differ from its non-shiny counterpart's (its sparkle
+  // highlight extends further), so reusing the standard crop for the shiny
+  // tile clipped real shiny-only content.
   const crop = { x: pokemon.sprite_crop_x, y: pokemon.sprite_crop_y, width: pokemon.sprite_crop_width, height: pokemon.sprite_crop_height };
+  const cropShiny = { x: pokemon.sprite_crop_x_shiny, y: pokemon.sprite_crop_y_shiny, width: pokemon.sprite_crop_width_shiny, height: pokemon.sprite_crop_height_shiny };
   const cropFemale = { x: pokemon.sprite_crop_x_female, y: pokemon.sprite_crop_y_female, width: pokemon.sprite_crop_width_female, height: pokemon.sprite_crop_height_female };
+  const cropShinyFemale = { x: pokemon.sprite_crop_x_shiny_female, y: pokemon.sprite_crop_y_shiny_female, width: pokemon.sprite_crop_width_shiny_female, height: pokemon.sprite_crop_height_shiny_female };
   return [
     { src: pokemon.sprite_url, label: hasGenderSprites ? "Male" : "Standard", cosmeticForm: null, crop },
     ...(pokemon.shiny_sprite_url
-      ? [{ src: pokemon.shiny_sprite_url, label: hasGenderSprites ? "Shiny Male" : "Shiny", cosmeticForm: null, crop }]
+      ? [{ src: pokemon.shiny_sprite_url, label: hasGenderSprites ? "Shiny Male" : "Shiny", cosmeticForm: null, crop: cropShiny }]
       : []),
     ...(pokemon.sprite_url_female
       ? [{ src: pokemon.sprite_url_female, label: "Female", cosmeticForm: null, crop: cropFemale }]
       : []),
     ...(pokemon.shiny_sprite_url_female
-      ? [{ src: pokemon.shiny_sprite_url_female, label: "Shiny Female", cosmeticForm: null, crop: cropFemale }]
+      ? [{ src: pokemon.shiny_sprite_url_female, label: "Shiny Female", cosmeticForm: null, crop: cropShinyFemale }]
       : []),
     // A form with no sprite art at all (e.g. PokéAPI's "sinistcha-masterpiece"
     // form, confirmed live: front_default/front_shiny/back_default are all
@@ -946,9 +953,10 @@ export function buildSpriteVariants(
     // shiny-specific skip below already applies to an empty shiny_sprite_url.
     ...(cosmeticForms ?? []).filter((f) => f.sprite_url).flatMap((f) => {
       const crop = { x: f.sprite_crop_x, y: f.sprite_crop_y, width: f.sprite_crop_width, height: f.sprite_crop_height };
+      const cropShiny = { x: f.sprite_crop_x_shiny, y: f.sprite_crop_y_shiny, width: f.sprite_crop_width_shiny, height: f.sprite_crop_height_shiny };
       return [
         { src: f.sprite_url, label: f.display_name, cosmeticForm: f, crop },
-        ...(f.shiny_sprite_url ? [{ src: f.shiny_sprite_url, label: `Shiny ${f.display_name}`, cosmeticForm: f, crop }] : []),
+        ...(f.shiny_sprite_url ? [{ src: f.shiny_sprite_url, label: `Shiny ${f.display_name}`, cosmeticForm: f, crop: cropShiny }] : []),
       ];
     }),
   ];

@@ -83,10 +83,18 @@ export interface PokemonRow {
   sprite_crop_y: number;
   sprite_crop_width: number;
   sprite_crop_height: number;
+  sprite_crop_x_shiny: number;
+  sprite_crop_y_shiny: number;
+  sprite_crop_width_shiny: number;
+  sprite_crop_height_shiny: number;
   sprite_crop_x_female: number;
   sprite_crop_y_female: number;
   sprite_crop_width_female: number;
   sprite_crop_height_female: number;
+  sprite_crop_x_shiny_female: number;
+  sprite_crop_y_shiny_female: number;
+  sprite_crop_width_shiny_female: number;
+  sprite_crop_height_shiny_female: number;
   types: string;
   gender_rate: number;
   has_gender_differences: boolean;
@@ -134,6 +142,10 @@ export interface CosmeticFormRow {
   sprite_crop_y: number;
   sprite_crop_width: number;
   sprite_crop_height: number;
+  sprite_crop_x_shiny: number;
+  sprite_crop_y_shiny: number;
+  sprite_crop_width_shiny: number;
+  sprite_crop_height_shiny: number;
   mega_stone_item: string | null;
   types: string;
   height: number;
@@ -410,10 +422,18 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
         sprite_crop_y: variety.spriteCropY,
         sprite_crop_width: variety.spriteCropWidth,
         sprite_crop_height: variety.spriteCropHeight,
+        sprite_crop_x_shiny: variety.spriteCropXShiny,
+        sprite_crop_y_shiny: variety.spriteCropYShiny,
+        sprite_crop_width_shiny: variety.spriteCropWidthShiny,
+        sprite_crop_height_shiny: variety.spriteCropHeightShiny,
         sprite_crop_x_female: variety.spriteCropXFemale,
         sprite_crop_y_female: variety.spriteCropYFemale,
         sprite_crop_width_female: variety.spriteCropWidthFemale,
         sprite_crop_height_female: variety.spriteCropHeightFemale,
+        sprite_crop_x_shiny_female: variety.spriteCropXShinyFemale,
+        sprite_crop_y_shiny_female: variety.spriteCropYShinyFemale,
+        sprite_crop_width_shiny_female: variety.spriteCropWidthShinyFemale,
+        sprite_crop_height_shiny_female: variety.spriteCropHeightShinyFemale,
         types: JSON.stringify(variety.types),
         // variety.genderRate is only ever set for Partner Pikachu/Eevee (see
         // PARTNER_FORM_OVERRIDES) — every other variety falls back to the
@@ -544,6 +564,10 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
     sprite_crop_y: f.spriteCropY,
     sprite_crop_width: f.spriteCropWidth,
     sprite_crop_height: f.spriteCropHeight,
+    sprite_crop_x_shiny: f.spriteCropXShiny,
+    sprite_crop_y_shiny: f.spriteCropYShiny,
+    sprite_crop_width_shiny: f.spriteCropWidthShiny,
+    sprite_crop_height_shiny: f.spriteCropHeightShiny,
     mega_stone_item: f.megaStoneItem,
     types: JSON.stringify(f.types),
     height: f.height,

@@ -188,6 +188,10 @@ pub struct TestCosmeticFormRow {
     pub sprite_crop_y: f64,
     pub sprite_crop_width: f64,
     pub sprite_crop_height: f64,
+    pub sprite_crop_x_shiny: f64,
+    pub sprite_crop_y_shiny: f64,
+    pub sprite_crop_width_shiny: f64,
+    pub sprite_crop_height_shiny: f64,
 }
 
 impl Default for TestCosmeticFormRow {
@@ -202,6 +206,10 @@ impl Default for TestCosmeticFormRow {
             sprite_crop_y: 0.0,
             sprite_crop_width: 1.0,
             sprite_crop_height: 1.0,
+            sprite_crop_x_shiny: 0.0,
+            sprite_crop_y_shiny: 0.0,
+            sprite_crop_width_shiny: 1.0,
+            sprite_crop_height_shiny: 1.0,
         }
     }
 }
@@ -211,15 +219,18 @@ pub fn seed_cosmetic_forms(conn: &Connection, rows: &[TestCosmeticFormRow]) {
         conn.execute(
             "INSERT INTO cosmetic_forms (
                 pokemon_id, form_id, kind, display_name, sprite_url, shiny_sprite_url,
-                sprite_crop_x, sprite_crop_y, sprite_crop_width, sprite_crop_height, mega_stone_item,
+                sprite_crop_x, sprite_crop_y, sprite_crop_width, sprite_crop_height,
+                sprite_crop_x_shiny, sprite_crop_y_shiny, sprite_crop_width_shiny, sprite_crop_height_shiny,
+                mega_stone_item,
                 types, height, weight, abilities,
                 stat_hp, stat_attack, stat_defense, stat_special_attack, stat_special_defense, stat_speed, stat_total,
                 base_experience, ev_yield_hp, ev_yield_attack, ev_yield_defense,
                 ev_yield_special_attack, ev_yield_special_defense, ev_yield_speed
-            ) VALUES (?1, ?2, ?3, ?4, '', '', ?5, ?6, ?7, ?8, ?9, '[]', 0, 0, '[]', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)",
+            ) VALUES (?1, ?2, ?3, ?4, '', '', ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, '[]', 0, 0, '[]', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)",
             rusqlite::params![
                 row.pokemon_id, row.form_id, row.kind, row.display_name,
                 row.sprite_crop_x, row.sprite_crop_y, row.sprite_crop_width, row.sprite_crop_height,
+                row.sprite_crop_x_shiny, row.sprite_crop_y_shiny, row.sprite_crop_width_shiny, row.sprite_crop_height_shiny,
                 row.mega_stone_item,
             ],
         )

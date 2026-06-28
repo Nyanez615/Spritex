@@ -31,10 +31,18 @@ const BULBASAUR: Pokemon = {
   sprite_crop_y: 0,
   sprite_crop_width: 1,
   sprite_crop_height: 1,
+  sprite_crop_x_shiny: 0,
+  sprite_crop_y_shiny: 0,
+  sprite_crop_width_shiny: 1,
+  sprite_crop_height_shiny: 1,
   sprite_crop_x_female: 0,
   sprite_crop_y_female: 0,
   sprite_crop_width_female: 1,
   sprite_crop_height_female: 1,
+  sprite_crop_x_shiny_female: 0,
+  sprite_crop_y_shiny_female: 0,
+  sprite_crop_width_shiny_female: 1,
+  sprite_crop_height_shiny_female: 1,
   types: '["grass","poison"]',
   gender_rate: 1,
   is_mythical: false,
@@ -88,6 +96,7 @@ describe("buildSpriteVariants", () => {
       id: 1, pokemon_id: 1013, form_id: 0, kind: "masterpiece", display_name: "Masterpiece Form Sinistcha",
       sprite_url: "", shiny_sprite_url: "",
       sprite_crop_x: 0, sprite_crop_y: 0, sprite_crop_width: 1, sprite_crop_height: 1,
+      sprite_crop_x_shiny: 0, sprite_crop_y_shiny: 0, sprite_crop_width_shiny: 1, sprite_crop_height_shiny: 1,
       mega_stone_item: null, types: "[]", height: 2, weight: 2, abilities: "[]",
       stat_hp: 1, stat_attack: 1, stat_defense: 1, stat_special_attack: 1, stat_special_defense: 1, stat_speed: 1,
       stat_total: 6, base_experience: 0, ev_yield_hp: 0, ev_yield_attack: 0, ev_yield_defense: 0,
@@ -97,45 +106,54 @@ describe("buildSpriteVariants", () => {
     expect(variants.map((v) => v.label)).toEqual(["Standard", "Shiny"]);
   });
 
-  it("gives standard/shiny tiles the pokemon row's own measured sprite_crop_*, and a cosmetic form's own measured crop to both its standard and shiny tiles", () => {
-    // A distinctly non-full-canvas crop, proving buildSpriteVariants actually
-    // reads pokemon.sprite_crop_* rather than hardcoding the full canvas —
-    // confirmed real (not just a hypothetical): bestSprite()'s fallback
-    // chain means a real pokemon row's own sprite_url could in principle hit
-    // the same padded-basic-sprite bug cosmetic_forms sprites were fixed
-    // for, so this is measured unconditionally for every pokemon row too.
-    const partiallyCropped: Pokemon = { ...BULBASAUR, sprite_crop_x: 0.1, sprite_crop_y: 0.2, sprite_crop_width: 0.5, sprite_crop_height: 0.6 };
+  it("gives standard/shiny tiles their own separately-measured sprite_crop_*/sprite_crop_*_shiny, and a cosmetic form's own measured crops to both its standard and shiny tiles", () => {
+    // Regression test for a real, user-reported bug: Hisuian Lilligant's
+    // shiny sprite genuinely extends further (height fraction 1.0, touching
+    // the canvas edge) than its standard sprite's (0.848) — confirmed by
+    // directly re-measuring both real sprites' alpha bounding boxes. An
+    // earlier version of buildSpriteVariants reused the standard crop for
+    // the shiny tile too, clipping that real shiny-only content. Standard
+    // and shiny crops here are deliberately given DIFFERENT values so a
+    // test that accidentally reused one for the other would fail.
+    const distinctlyCropped: Pokemon = {
+      ...BULBASAUR,
+      sprite_crop_x: 0.1, sprite_crop_y: 0.2, sprite_crop_width: 0.5, sprite_crop_height: 0.6,
+      sprite_crop_x_shiny: 0.15, sprite_crop_y_shiny: 0, sprite_crop_width_shiny: 0.7, sprite_crop_height_shiny: 1,
+    };
     const unownB: CosmeticForm = {
       id: 1, pokemon_id: 201, form_id: 0, kind: "b", display_name: "Unown B",
       sprite_url: "unown-b.png", shiny_sprite_url: "unown-b-shiny.png",
       sprite_crop_x: 0.385, sprite_crop_y: 0.333, sprite_crop_width: 0.229, sprite_crop_height: 0.333,
+      sprite_crop_x_shiny: 0.4, sprite_crop_y_shiny: 0.35, sprite_crop_width_shiny: 0.2, sprite_crop_height_shiny: 0.3,
       mega_stone_item: null, types: "[]", height: 5, weight: 5, abilities: "[]",
       stat_hp: 1, stat_attack: 1, stat_defense: 1, stat_special_attack: 1, stat_special_defense: 1, stat_speed: 1,
       stat_total: 6, base_experience: 0, ev_yield_hp: 0, ev_yield_attack: 0, ev_yield_defense: 0,
       ev_yield_special_attack: 0, ev_yield_special_defense: 0, ev_yield_speed: 0,
     };
-    const variants = buildSpriteVariants(partiallyCropped, [unownB]);
+    const variants = buildSpriteVariants(distinctlyCropped, [unownB]);
     const [standard, shiny, cosmeticStandard, cosmeticShiny] = variants;
     expect(standard.crop).toEqual({ x: 0.1, y: 0.2, width: 0.5, height: 0.6 });
-    expect(shiny.crop).toEqual({ x: 0.1, y: 0.2, width: 0.5, height: 0.6 });
+    expect(shiny.crop).toEqual({ x: 0.15, y: 0, width: 0.7, height: 1 });
     expect(cosmeticStandard.crop).toEqual({ x: 0.385, y: 0.333, width: 0.229, height: 0.333 });
-    expect(cosmeticShiny.crop).toEqual({ x: 0.385, y: 0.333, width: 0.229, height: 0.333 });
+    expect(cosmeticShiny.crop).toEqual({ x: 0.4, y: 0.35, width: 0.2, height: 0.3 });
   });
 
-  it("gives Female/Shiny Female tiles their own separately-measured sprite_crop_*_female, distinct from the standard/shiny crop", () => {
+  it("gives Female/Shiny Female tiles their own separately-measured sprite_crop_*_female/sprite_crop_*_shiny_female, distinct from the standard/shiny crop and from each other", () => {
     const withGenderDifference: Pokemon = {
       ...BULBASAUR,
       sprite_url_female: "bulbasaur-f.png",
       shiny_sprite_url_female: "bulbasaur-f-shiny.png",
       sprite_crop_x: 0, sprite_crop_y: 0, sprite_crop_width: 1, sprite_crop_height: 1,
+      sprite_crop_x_shiny: 0, sprite_crop_y_shiny: 0, sprite_crop_width_shiny: 1, sprite_crop_height_shiny: 1,
       sprite_crop_x_female: 0.3, sprite_crop_y_female: 0.4, sprite_crop_width_female: 0.4, sprite_crop_height_female: 0.2,
+      sprite_crop_x_shiny_female: 0.25, sprite_crop_y_shiny_female: 0.1, sprite_crop_width_shiny_female: 0.5, sprite_crop_height_shiny_female: 0.8,
     };
     const variants = buildSpriteVariants(withGenderDifference, []);
     const [male, shinyMale, female, shinyFemale] = variants;
     expect(male.crop).toEqual({ x: 0, y: 0, width: 1, height: 1 });
     expect(shinyMale.crop).toEqual({ x: 0, y: 0, width: 1, height: 1 });
     expect(female.crop).toEqual({ x: 0.3, y: 0.4, width: 0.4, height: 0.2 });
-    expect(shinyFemale.crop).toEqual({ x: 0.3, y: 0.4, width: 0.4, height: 0.2 });
+    expect(shinyFemale.crop).toEqual({ x: 0.25, y: 0.1, width: 0.5, height: 0.8 });
   });
 
   it("omits a cosmetic form's Shiny tile the same way, while keeping its standard tile", () => {
@@ -151,6 +169,10 @@ describe("buildSpriteVariants", () => {
       sprite_crop_y: 0,
       sprite_crop_width: 1,
       sprite_crop_height: 1,
+      sprite_crop_x_shiny: 0,
+      sprite_crop_y_shiny: 0,
+      sprite_crop_width_shiny: 1,
+      sprite_crop_height_shiny: 1,
       mega_stone_item: "bulbasaurite",
       types: '["grass","poison"]',
       height: 7,
@@ -446,6 +468,10 @@ describe("applyCosmeticForm", () => {
     sprite_crop_y: 0,
     sprite_crop_width: 1,
     sprite_crop_height: 1,
+    sprite_crop_x_shiny: 0,
+    sprite_crop_y_shiny: 0,
+    sprite_crop_width_shiny: 1,
+    sprite_crop_height_shiny: 1,
     mega_stone_item: "venusaurite",
     types: '["grass","poison"]',
     height: 24,
@@ -589,6 +615,7 @@ describe("buildEvolutionLanes", () => {
         sprite_url: spriteUrl, shiny_sprite_url: "",
         sprite_crop_x: crop?.x ?? 0, sprite_crop_y: crop?.y ?? 0,
         sprite_crop_width: crop?.width ?? 1, sprite_crop_height: crop?.height ?? 1,
+        sprite_crop_x_shiny: 0, sprite_crop_y_shiny: 0, sprite_crop_width_shiny: 1, sprite_crop_height_shiny: 1,
         mega_stone_item: null, types: "[]", height: 5, weight: 5, abilities: "[]",
         stat_hp: 1, stat_attack: 1, stat_defense: 1, stat_special_attack: 1, stat_special_defense: 1, stat_speed: 1,
         stat_total: 6, base_experience: 0, ev_yield_hp: 0, ev_yield_attack: 0, ev_yield_defense: 0,

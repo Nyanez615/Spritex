@@ -17,18 +17,29 @@ CREATE TABLE pokemon (
     -- (sprite_url usually resolves to tightly-cropped official artwork via
     -- bestSprite()'s fallback chain), computed unconditionally anyway so any
     -- future species/variety that ever lacks official-artwork/home sprites
-    -- gets the same fix automatically. _female fields are measured
-    -- separately from sprite_url_female (a genuinely different sprite when
-    -- has_gender_differences is true, not just a recolor); default to the
-    -- full canvas when there's no gender-difference sprite to crop.
+    -- gets the same fix automatically. All 4 sprite slots (standard/shiny/
+    -- female/shiny female) get their OWN independently-measured crop — a
+    -- real, confirmed bug (Hisuian Lilligant) proved a shiny recolor's alpha
+    -- shape can genuinely differ from its non-shiny counterpart's (its
+    -- sparkle highlight extends further), not just a palette swap on the
+    -- same shape; default to the full canvas for the 2 shiny-female/female
+    -- slots when there's no gender-difference sprite to crop at all.
     sprite_crop_x            REAL    NOT NULL DEFAULT 0,
     sprite_crop_y            REAL    NOT NULL DEFAULT 0,
     sprite_crop_width        REAL    NOT NULL DEFAULT 1,
     sprite_crop_height       REAL    NOT NULL DEFAULT 1,
+    sprite_crop_x_shiny             REAL    NOT NULL DEFAULT 0,
+    sprite_crop_y_shiny             REAL    NOT NULL DEFAULT 0,
+    sprite_crop_width_shiny         REAL    NOT NULL DEFAULT 1,
+    sprite_crop_height_shiny        REAL    NOT NULL DEFAULT 1,
     sprite_crop_x_female      REAL    NOT NULL DEFAULT 0,
     sprite_crop_y_female      REAL    NOT NULL DEFAULT 0,
     sprite_crop_width_female  REAL    NOT NULL DEFAULT 1,
     sprite_crop_height_female REAL    NOT NULL DEFAULT 1,
+    sprite_crop_x_shiny_female      REAL    NOT NULL DEFAULT 0,
+    sprite_crop_y_shiny_female      REAL    NOT NULL DEFAULT 0,
+    sprite_crop_width_shiny_female  REAL    NOT NULL DEFAULT 1,
+    sprite_crop_height_shiny_female REAL    NOT NULL DEFAULT 1,
     types                    TEXT    NOT NULL,
     gender_rate              INTEGER NOT NULL,
     is_mythical              INTEGER NOT NULL DEFAULT 0,

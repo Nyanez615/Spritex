@@ -12,10 +12,18 @@ sprite_url_female: string | null, shiny_sprite_url_female: string | null,
  * (sprite_url usually resolves to tightly-cropped official artwork),
  * computed unconditionally anyway so any future species/variety that
  * ever lacks official-artwork/home sprites gets the same fix
- * automatically. Also applies to shiny_sprite_url (a shiny sprite is a
- * pure palette recolor sharing the same alpha shape, confirmed live).
+ * automatically.
  */
 sprite_crop_x: number, sprite_crop_y: number, sprite_crop_width: number, sprite_crop_height: number, 
+/**
+ * Same idea, measured separately from shiny_sprite_url — NOT reused
+ * from sprite_crop_x/y/width/height. A real, confirmed bug (Hisuian
+ * Lilligant) proved a shiny recolor's alpha shape can genuinely differ
+ * from its non-shiny counterpart's (its sparkle highlight extends
+ * further, reaching the very edge of the canvas where the standard
+ * sprite's doesn't), not always a pure palette swap on the same shape.
+ */
+sprite_crop_x_shiny: number, sprite_crop_y_shiny: number, sprite_crop_width_shiny: number, sprite_crop_height_shiny: number, 
 /**
  * Same idea, measured separately from sprite_url_female (a genuinely
  * different sprite when has_gender_differences is true, not just a
@@ -23,6 +31,10 @@ sprite_crop_x: number, sprite_crop_y: number, sprite_crop_width: number, sprite_
  * sprite to crop at all.
  */
 sprite_crop_x_female: number, sprite_crop_y_female: number, sprite_crop_width_female: number, sprite_crop_height_female: number, 
+/**
+ * shinySpriteUrlFemale's own crop — full-canvas default when there's no gender-difference sprite.
+ */
+sprite_crop_x_shiny_female: number, sprite_crop_y_shiny_female: number, sprite_crop_width_shiny_female: number, sprite_crop_height_shiny_female: number, 
 /**
  * JSON-encoded array of type names, e.g. `["grass","poison"]`
  */

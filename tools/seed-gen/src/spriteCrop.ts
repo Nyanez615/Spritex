@@ -61,14 +61,39 @@ export function computeAlphaBbox(png: { width: number; height: number; data: Uin
   };
 }
 
-/** Disk-cached by sprite URL (httpCache.ts's sanitizeKey, shared so a future Unicode-collision case can't recur independently here) — re-running the pipeline only re-downloads/decodes sprites not already cached. */
+/**
+ * Disk-cached by sprite URL (httpCache.ts's sanitizeKey, shared so a future
+ * Unicode-collision case can't recur independently here) — re-running the
+ * pipeline only re-downloads/decodes sprites not already cached.
+ *
+ * A 404 is treated the same as an empty/absent URL (FULL_CANVAS_CROP), not
+ * a hard failure — confirmed live (Busted Mimikyu, pokemon_id 10143) that
+ * PokéAPI's own sprite fields can claim a URL exists (a stale disk-cached
+ * `official-artwork.front_shiny` value, since corrected upstream to null —
+ * the same shape of staleness Round 17 found for the Mega Dimension DLC)
+ * when the underlying file genuinely doesn't. A single bad sprite shouldn't
+ * crash a 1000+-species pipeline run; the frontend's buildSpriteVariants
+ * already skips a tile with an empty sprite_url, so degrading to "no crop
+ * data" here is consistent with how a genuinely-missing sprite is already
+ * handled elsewhere, not a new behavior.
+ */
 export async function cachedSpriteCrop(url: string): Promise<SpriteCrop> {
   if (!url) return FULL_CANVAS_CROP;
   const file = path.join(CACHE_ROOT, "sprite-crop", `${sanitizeKey(url)}.json`);
   const cached = await readCache<SpriteCrop>(file);
   if (cached !== undefined) return cached;
 
-  const buffer = await fetchWithRetry(url, async (res) => Buffer.from(await res.arrayBuffer()));
+  let buffer: Buffer;
+  try {
+    buffer = await fetchWithRetry(url, async (res) => Buffer.from(await res.arrayBuffer()));
+  } catch (err) {
+    if (err instanceof Error && /^404\b/.test(err.message)) {
+      console.warn(`sprite-crop: 404 for ${url}, treating as no sprite art (FULL_CANVAS_CROP)`);
+      await writeCache(file, FULL_CANVAS_CROP);
+      return FULL_CANVAS_CROP;
+    }
+    throw err;
+  }
   const png = PNG.sync.read(buffer);
   const crop = computeAlphaBbox(png);
   await writeCache(file, crop);

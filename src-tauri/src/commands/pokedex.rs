@@ -19,10 +19,18 @@ pub(crate) fn row_to_pokemon(row: &Row) -> rusqlite::Result<Pokemon> {
         sprite_crop_y: row.get("sprite_crop_y")?,
         sprite_crop_width: row.get("sprite_crop_width")?,
         sprite_crop_height: row.get("sprite_crop_height")?,
+        sprite_crop_x_shiny: row.get("sprite_crop_x_shiny")?,
+        sprite_crop_y_shiny: row.get("sprite_crop_y_shiny")?,
+        sprite_crop_width_shiny: row.get("sprite_crop_width_shiny")?,
+        sprite_crop_height_shiny: row.get("sprite_crop_height_shiny")?,
         sprite_crop_x_female: row.get("sprite_crop_x_female")?,
         sprite_crop_y_female: row.get("sprite_crop_y_female")?,
         sprite_crop_width_female: row.get("sprite_crop_width_female")?,
         sprite_crop_height_female: row.get("sprite_crop_height_female")?,
+        sprite_crop_x_shiny_female: row.get("sprite_crop_x_shiny_female")?,
+        sprite_crop_y_shiny_female: row.get("sprite_crop_y_shiny_female")?,
+        sprite_crop_width_shiny_female: row.get("sprite_crop_width_shiny_female")?,
+        sprite_crop_height_shiny_female: row.get("sprite_crop_height_shiny_female")?,
         types: row.get("types")?,
         gender_rate: row.get("gender_rate")?,
         is_mythical: row.get::<_, i32>("is_mythical")? != 0,
@@ -227,5 +235,32 @@ mod tests {
         assert_eq!(result.sprite_crop_y, 0.333);
         assert_eq!(result.sprite_crop_width, 0.229);
         assert_eq!(result.sprite_crop_height, 0.333);
+    }
+
+    #[test]
+    fn get_pokemon_detail_round_trips_shiny_sprite_crop_independently_of_the_standard_one() {
+        // Regression test for a real, user-reported bug: Hisuian Lilligant's
+        // shiny sprite genuinely extends further (height fraction 1.0,
+        // touching the canvas edge) than its standard sprite's (0.848) —
+        // confirmed by directly re-measuring both real sprites' alpha
+        // bounding boxes. Reusing the standard crop for shiny (an earlier
+        // version's behavior) clipped real shiny-only artwork (a sparkle
+        // highlight); the shiny crop must round-trip independently.
+        let conn = seed_static_db(&[pokemon_row(549, "lilligant-hisui", 8, false)]);
+        conn.execute(
+            "UPDATE pokemon SET
+                sprite_crop_x = 0.204, sprite_crop_y = 0.116, sprite_crop_width = 0.596, sprite_crop_height = 0.848,
+                sprite_crop_x_shiny = 0.147, sprite_crop_y_shiny = 0.0, sprite_crop_width_shiny = 0.703, sprite_crop_height_shiny = 1.0
+             WHERE id = 549",
+            [],
+        )
+        .unwrap();
+        let result = get_pokemon_detail_impl(&conn, 549, 0).unwrap();
+        assert_eq!(result.sprite_crop_x, 0.204, "the standard crop should be unaffected");
+        assert_eq!(result.sprite_crop_height, 0.848);
+        assert_eq!(result.sprite_crop_x_shiny, 0.147);
+        assert_eq!(result.sprite_crop_y_shiny, 0.0);
+        assert_eq!(result.sprite_crop_width_shiny, 0.703);
+        assert_eq!(result.sprite_crop_height_shiny, 1.0);
     }
 }

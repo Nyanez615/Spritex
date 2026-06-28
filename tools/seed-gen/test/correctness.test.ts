@@ -1269,3 +1269,19 @@ test("Burmy (#412)'s evolution_edges carry from_cosmetic_kind for the Sandy/Tras
   assert.equal(toPlantWormadam.from_cosmetic_kind, null, "Plant Cloak isn't a tracked cosmetic_forms kind at all (it's just Burmy's bare default sprite), so there's nothing to require");
   assert.equal(toMothim.from_cosmetic_kind, null, "any Burmy cloak can become Mothim — only gender matters there");
 });
+
+test("Hisuian Lilligant (#549 form 1)'s shiny sprite gets its OWN measured crop, genuinely different from its standard sprite's — regression test for a real, user-reported bug: an earlier version of this pipeline reused the standard sprite's crop for the shiny tile too, on the (confirmed-false-in-general) assumption that a shiny recolor always shares its non-shiny counterpart's exact alpha shape. Confirmed by independently re-measuring both real sprites: the shiny recolor's flower/sparkle highlight genuinely extends further, all the way to the top of the canvas (height fraction 1.0), while the standard sprite's stops well short (0.848) — applying the standard crop to the shiny sprite clipped that real shiny-only content", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const hisuianLilligant = pokemon.find((p) => p.id === 549 && p.form_id === 1)!;
+  assert.ok(hisuianLilligant, "expected Hisuian Lilligant to be a tracked pokemon row");
+  assert.notEqual(
+    hisuianLilligant.sprite_crop_height,
+    hisuianLilligant.sprite_crop_height_shiny,
+    "the shiny crop must be independently measured, not copied from the standard crop",
+  );
+  // The shiny sprite's real measured bbox is height-dominant at exactly 1.0
+  // (touching the canvas edge) — confirmed via a direct PIL re-measurement
+  // of the live sprite, independent of this pipeline's own code.
+  assert.equal(hisuianLilligant.sprite_crop_height_shiny, 1, "expected the shiny sprite's content to reach the very top of its canvas");
+  assert.ok(hisuianLilligant.sprite_crop_height < 0.9, "expected the standard sprite's content to stop well short of the canvas edge");
+});

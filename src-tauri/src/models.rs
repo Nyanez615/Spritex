@@ -271,12 +271,21 @@ pub struct Pokemon {
     /// (sprite_url usually resolves to tightly-cropped official artwork),
     /// computed unconditionally anyway so any future species/variety that
     /// ever lacks official-artwork/home sprites gets the same fix
-    /// automatically. Also applies to shiny_sprite_url (a shiny sprite is a
-    /// pure palette recolor sharing the same alpha shape, confirmed live).
+    /// automatically.
     pub sprite_crop_x: f64,
     pub sprite_crop_y: f64,
     pub sprite_crop_width: f64,
     pub sprite_crop_height: f64,
+    /// Same idea, measured separately from shiny_sprite_url — NOT reused
+    /// from sprite_crop_x/y/width/height. A real, confirmed bug (Hisuian
+    /// Lilligant) proved a shiny recolor's alpha shape can genuinely differ
+    /// from its non-shiny counterpart's (its sparkle highlight extends
+    /// further, reaching the very edge of the canvas where the standard
+    /// sprite's doesn't), not always a pure palette swap on the same shape.
+    pub sprite_crop_x_shiny: f64,
+    pub sprite_crop_y_shiny: f64,
+    pub sprite_crop_width_shiny: f64,
+    pub sprite_crop_height_shiny: f64,
     /// Same idea, measured separately from sprite_url_female (a genuinely
     /// different sprite when has_gender_differences is true, not just a
     /// recolor) — full-canvas defaults when there's no gender-difference
@@ -285,6 +294,11 @@ pub struct Pokemon {
     pub sprite_crop_y_female: f64,
     pub sprite_crop_width_female: f64,
     pub sprite_crop_height_female: f64,
+    /// shinySpriteUrlFemale's own crop — full-canvas default when there's no gender-difference sprite.
+    pub sprite_crop_x_shiny_female: f64,
+    pub sprite_crop_y_shiny_female: f64,
+    pub sprite_crop_width_shiny_female: f64,
+    pub sprite_crop_height_shiny_female: f64,
     /// JSON-encoded array of type names, e.g. `["grass","poison"]`
     pub types: String,
     /// -1 = genderless, 0 = always male, 8 = always female
@@ -440,12 +454,20 @@ pub struct CosmeticForm {
     /// Unown ~23%x33% filled, Arceus ~71%x76% filled) — too inconsistent for a
     /// single uniform CSS zoom to safely correct without clipping some
     /// sprites. The frontend uses this to zoom each sprite in by its own real
-    /// amount. Also applies to shiny_sprite_url — a shiny sprite is a pure
-    /// palette recolor sharing the same alpha shape, confirmed live.
+    /// amount.
     pub sprite_crop_x: f64,
     pub sprite_crop_y: f64,
     pub sprite_crop_width: f64,
     pub sprite_crop_height: f64,
+    /// Same idea, measured separately from shiny_sprite_url — NOT reused
+    /// from sprite_crop_x/y/width/height. A real, confirmed bug (Hisuian
+    /// Lilligant) proved a shiny recolor's alpha shape can genuinely differ
+    /// from its non-shiny counterpart's, not always a pure palette swap on
+    /// the same shape.
+    pub sprite_crop_x_shiny: f64,
+    pub sprite_crop_y_shiny: f64,
+    pub sprite_crop_width_shiny: f64,
+    pub sprite_crop_height_shiny: f64,
     /// PokéAPI item slug, e.g. "venusaurite" — None for Gigantamax (no held item).
     pub mega_stone_item: Option<String>,
     /// JSON-encoded array of type names — Mega/Gmax forms can differ from the base form (e.g. Mega Charizard X is Fire/Dragon, not Fire/Flying).

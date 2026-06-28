@@ -23,13 +23,19 @@ CREATE TABLE cosmetic_forms (
     -- with no official-artwork/home variant, and how much padding varies
     -- wildly by species (confirmed live: Unown ~23%x33% filled, Arceus
     -- ~71%x76% filled) — too inconsistent for a single uniform CSS zoom to
-    -- safely correct without clipping some sprites. Computed once from
-    -- sprite_url and reused for shiny_sprite_url too (a shiny sprite is a
-    -- pure palette recolor sharing the same alpha shape, confirmed live).
+    -- safely correct without clipping some sprites. shiny_sprite_url gets
+    -- its OWN independently-measured crop, not reused from sprite_url's —
+    -- a real, confirmed bug (Hisuian Lilligant) proved a shiny recolor's
+    -- alpha shape can genuinely differ from its non-shiny counterpart's,
+    -- not always a pure palette swap on the same shape.
     sprite_crop_x             REAL    NOT NULL DEFAULT 0,
     sprite_crop_y             REAL    NOT NULL DEFAULT 0,
     sprite_crop_width         REAL    NOT NULL DEFAULT 1,
     sprite_crop_height        REAL    NOT NULL DEFAULT 1,
+    sprite_crop_x_shiny       REAL    NOT NULL DEFAULT 0,
+    sprite_crop_y_shiny       REAL    NOT NULL DEFAULT 0,
+    sprite_crop_width_shiny   REAL    NOT NULL DEFAULT 1,
+    sprite_crop_height_shiny  REAL    NOT NULL DEFAULT 1,
     mega_stone_item           TEXT,
     types                     TEXT    NOT NULL,
     height                    INTEGER NOT NULL,

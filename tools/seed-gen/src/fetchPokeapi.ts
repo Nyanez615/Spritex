@@ -419,16 +419,12 @@ export interface FetchedVariety {
   shinySpriteUrlFemale: string | null;
   /**
    * spriteUrl's own non-transparent content region, as fractions (0..1) of
-   * its canvas — see spriteCrop.ts's header for why this exists. Computed
-   * once from spriteUrl and reused for shinySpriteUrl too: confirmed live
-   * (Unown B) that a shiny sprite is a pure palette recolor sharing the
-   * exact same alpha channel as its non-shiny counterpart, never a redraw.
-   * bestSprite() usually resolves to tightly-cropped official artwork for
-   * real pokemon rows (this comes out near-full-canvas, a safe no-op), but
-   * nothing guarantees that forever — computed unconditionally so any
-   * future species/variety that ever falls through to the small basic
-   * sprite gets the same fix automatically, not just decorative
-   * cosmetic_forms sprites.
+   * its canvas — see spriteCrop.ts's header for why this exists. bestSprite()
+   * usually resolves to tightly-cropped official artwork for real pokemon
+   * rows (this comes out near-full-canvas, a safe no-op), but nothing
+   * guarantees that forever — computed unconditionally so any future
+   * species/variety that ever falls through to the small basic sprite gets
+   * the same fix automatically, not just decorative cosmetic_forms sprites.
    */
   spriteCropX: number;
   spriteCropY: number;
@@ -439,6 +435,29 @@ export interface FetchedVariety {
   spriteCropYFemale: number;
   spriteCropWidthFemale: number;
   spriteCropHeightFemale: number;
+  /**
+   * Same idea, computed separately from shinySpriteUrl — NOT reused from
+   * spriteCropX/Y/Width/Height. An earlier version of this pipeline assumed
+   * "confirmed live (Unown B) that a shiny sprite is a pure palette recolor
+   * sharing the exact same alpha channel as its non-shiny counterpart" and
+   * reused the standard crop for shiny too; confirmed false for Hisuian
+   * Lilligant (a real user-reported bug, traced to here) — its shiny
+   * recolor's flower/sparkle highlight genuinely extends further (real
+   * measured height fraction 1.0, touching the canvas edge, vs. the
+   * standard sprite's 0.848), so reusing the standard crop clipped real
+   * shiny-only content. Unown B's claim still holds for Unown specifically;
+   * it just isn't universal, so each sprite now gets its own measurement,
+   * the same precedent spriteCropXFemale already set for gender differences.
+   */
+  spriteCropXShiny: number;
+  spriteCropYShiny: number;
+  spriteCropWidthShiny: number;
+  spriteCropHeightShiny: number;
+  /** Same idea, computed separately from shinySpriteUrlFemale — FULL_CANVAS_CROP when there's no gender-difference sprite at all. */
+  spriteCropXShinyFemale: number;
+  spriteCropYShinyFemale: number;
+  spriteCropWidthShinyFemale: number;
+  spriteCropHeightShinyFemale: number;
   height: number;
   weight: number;
   abilities: Array<{ name: string; isHidden: boolean }>;
@@ -498,15 +517,23 @@ export interface FetchedCosmeticForm {
   shinySpriteUrl: string;
   /**
    * spriteUrl's own non-transparent content region, as fractions (0..1) of
-   * its canvas — see spriteCrop.ts's header for why this exists. Computed
-   * once from spriteUrl and reused for shinySpriteUrl too: confirmed live
-   * (Unown B) that a shiny sprite is a pure palette recolor sharing the
-   * exact same alpha channel as its non-shiny counterpart, never a redraw.
+   * its canvas — see spriteCrop.ts's header for why this exists.
    */
   spriteCropX: number;
   spriteCropY: number;
   spriteCropWidth: number;
   spriteCropHeight: number;
+  /**
+   * Same idea, computed separately from shinySpriteUrl — NOT reused from
+   * spriteCropX/Y/Width/Height. See FetchedVariety.spriteCropXShiny's own
+   * doc comment for the real, confirmed bug (Hisuian Lilligant) that proved
+   * shiny sprites can't be assumed to share their non-shiny counterpart's
+   * alpha shape.
+   */
+  spriteCropXShiny: number;
+  spriteCropYShiny: number;
+  spriteCropWidthShiny: number;
+  spriteCropHeightShiny: number;
   /** PokéAPI item slug, e.g. "venusaurite" — null for Gigantamax (no held item). */
   megaStoneItem: string | null;
   /**
@@ -722,7 +749,7 @@ async function extraSpriteForms(
   limiter: ConcurrencyLimiter,
   pokemon: PokeApiPokemon,
   ownFormId: number,
-  shared: Omit<FetchedCosmeticForm, "pokemonId" | "baseFormId" | "apiPokemonName" | "kind" | "displayName" | "spriteUrl" | "shinySpriteUrl" | "spriteCropX" | "spriteCropY" | "spriteCropWidth" | "spriteCropHeight" | "megaStoneItem">,
+  shared: Omit<FetchedCosmeticForm, "pokemonId" | "baseFormId" | "apiPokemonName" | "kind" | "displayName" | "spriteUrl" | "shinySpriteUrl" | "spriteCropX" | "spriteCropY" | "spriteCropWidth" | "spriteCropHeight" | "spriteCropXShiny" | "spriteCropYShiny" | "spriteCropWidthShiny" | "spriteCropHeightShiny" | "megaStoneItem">,
 ): Promise<FetchedCosmeticForm[]> {
   if (pokemon.forms.length <= 1) return [];
   const extras: FetchedCosmeticForm[] = [];
@@ -730,7 +757,9 @@ async function extraSpriteForms(
     const form = await limiter.run(() => cachedJson<PokeApiForm>("pokeapi-form", formRef.name, formRef.url));
     if (form.is_default || form.form_name === "female") continue;
     const spriteUrl = bestSprite(form.sprites, false);
+    const shinySpriteUrl = bestSprite(form.sprites, true);
     const crop = await limiter.run(() => cachedSpriteCrop(spriteUrl));
+    const cropShiny = await limiter.run(() => cachedSpriteCrop(shinySpriteUrl));
     extras.push({
       // `shared` spreads FIRST — it's the parent variety's own sprite/types/
       // stats, used as the fallback for everything this form doesn't
@@ -746,11 +775,15 @@ async function extraSpriteForms(
       kind: form.form_name,
       displayName: englishName(form.names, pokemon.name),
       spriteUrl,
-      shinySpriteUrl: bestSprite(form.sprites, true),
+      shinySpriteUrl,
       spriteCropX: crop.x,
       spriteCropY: crop.y,
       spriteCropWidth: crop.width,
       spriteCropHeight: crop.height,
+      spriteCropXShiny: cropShiny.x,
+      spriteCropYShiny: cropShiny.y,
+      spriteCropWidthShiny: cropShiny.width,
+      spriteCropHeightShiny: cropShiny.height,
       megaStoneItem: null,
       types: form.types.length > 0 ? form.types.map((t) => t.type.name) : shared.types,
     });
@@ -777,12 +810,17 @@ async function fetchVarietyDetail(
   // pokemon-form resource is stuck with) means a real `pokemon` row's own
   // sprite could in principle hit the identical bug if a future species/
   // variety ever lacks official-artwork/home sprites, even though none
-  // currently do. spriteUrlFemale gets its own separately-measured crop
-  // (a genuinely different sprite when has_gender_differences is true, not
-  // just a recolor) — FULL_CANVAS_CROP when there's no gender-difference
-  // sprite to crop at all.
+  // currently do. Each of the 4 sprite slots (standard/female/shiny/shiny
+  // female) gets its OWN independently-measured crop — confirmed via a real
+  // user-reported bug (Hisuian Lilligant) that a shiny recolor's alpha shape
+  // can genuinely differ from its non-shiny counterpart's (its sparkle
+  // highlight extends further), not just a palette swap on the same shape
+  // the way it happens to for some other species (Unown). FULL_CANVAS_CROP
+  // for the two female slots when there's no gender-difference sprite at all.
   const spriteCrop = await limiter.run(() => cachedSpriteCrop(spriteUrl));
+  const spriteCropShiny = await limiter.run(() => cachedSpriteCrop(shinySpriteUrl));
   const spriteCropFemale = spriteUrlFemale ? await limiter.run(() => cachedSpriteCrop(spriteUrlFemale)) : FULL_CANVAS_CROP;
+  const spriteCropShinyFemale = shinySpriteUrlFemale ? await limiter.run(() => cachedSpriteCrop(shinySpriteUrlFemale)) : FULL_CANVAS_CROP;
   const shared = {
     types: pokemon.types.map((t) => t.type.name),
     spriteUrl,
@@ -793,10 +831,18 @@ async function fetchVarietyDetail(
     spriteCropY: spriteCrop.y,
     spriteCropWidth: spriteCrop.width,
     spriteCropHeight: spriteCrop.height,
+    spriteCropXShiny: spriteCropShiny.x,
+    spriteCropYShiny: spriteCropShiny.y,
+    spriteCropWidthShiny: spriteCropShiny.width,
+    spriteCropHeightShiny: spriteCropShiny.height,
     spriteCropXFemale: spriteCropFemale.x,
     spriteCropYFemale: spriteCropFemale.y,
     spriteCropWidthFemale: spriteCropFemale.width,
     spriteCropHeightFemale: spriteCropFemale.height,
+    spriteCropXShinyFemale: spriteCropShinyFemale.x,
+    spriteCropYShinyFemale: spriteCropShinyFemale.y,
+    spriteCropWidthShinyFemale: spriteCropShinyFemale.width,
+    spriteCropHeightShinyFemale: spriteCropShinyFemale.height,
     height: pokemon.height,
     weight: pokemon.weight,
     abilities: pokemon.abilities.map((a) => ({ name: a.ability.name, isHidden: a.is_hidden })),
@@ -849,6 +895,10 @@ async function fetchVarietyDetail(
           spriteCropY: shared.spriteCropY,
           spriteCropWidth: shared.spriteCropWidth,
           spriteCropHeight: shared.spriteCropHeight,
+          spriteCropXShiny: shared.spriteCropXShiny,
+          spriteCropYShiny: shared.spriteCropYShiny,
+          spriteCropWidthShiny: shared.spriteCropWidthShiny,
+          spriteCropHeightShiny: shared.spriteCropHeightShiny,
           megaStoneItem: kind === "gmax" ? null : megaStoneMap.get(`${speciesName}:${kind}`) ?? null,
           types: shared.types,
           height: shared.height,
