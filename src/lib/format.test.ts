@@ -87,22 +87,29 @@ function parseTransform(transform: string): { tx: number; ty: number; scale: num
   return { tx: Number(match[1]), ty: Number(match[2]), scale: Number(match[3]) };
 }
 
+// Mirrors format.ts's own private CROP_FILL_FRACTION (0.92) — the dominant
+// axis fills 92% of the box, not 100%, leaving a small margin instead of
+// touching the edge. Inlined here rather than exported, matching this
+// file's existing convention of asserting the actual derived math rather
+// than importing a shared constant.
+const FILL = 0.92;
+
 describe("spriteCropTransform", () => {
-  it("is a no-op (scale 1, no translation) for the full canvas", () => {
+  it("scales the full canvas down slightly (not a literal no-op) so its content doesn't touch the box edge", () => {
     const { tx, ty, scale } = parseTransform(spriteCropTransform(FULL_CANVAS_CROP));
-    expect(scale).toBeCloseTo(1);
+    expect(scale).toBeCloseTo(FILL);
     expect(tx).toBeCloseTo(0);
     expect(ty).toBeCloseTo(0);
   });
 
-  it("scales by 1/max(width,height) and centers an off-center crop", () => {
-    // x=0.6,y=0.1,width=0.2,height=0.3 -> center (0.7, 0.25), scale 1/0.3
+  it("scales by FILL/max(width,height) and centers an off-center crop", () => {
+    // x=0.6,y=0.1,width=0.2,height=0.3 -> center (0.7, 0.25), scale FILL/0.3
     const { tx, ty, scale } = parseTransform(
       spriteCropTransform({ x: 0.6, y: 0.1, width: 0.2, height: 0.3 }),
     );
-    expect(scale).toBeCloseTo(1 / 0.3);
-    expect(tx).toBeCloseTo((1 / 0.3) * (0.5 - 0.7) * 100);
-    expect(ty).toBeCloseTo((1 / 0.3) * (0.5 - 0.25) * 100);
+    expect(scale).toBeCloseTo(FILL / 0.3);
+    expect(tx).toBeCloseTo((FILL / 0.3) * (0.5 - 0.7) * 100);
+    expect(ty).toBeCloseTo((FILL / 0.3) * (0.5 - 0.25) * 100);
   });
 
   it("matches Unown B's real measured crop (centered content, ~3x zoom)", () => {
@@ -111,9 +118,24 @@ describe("spriteCropTransform", () => {
     const { tx, ty, scale } = parseTransform(
       spriteCropTransform({ x: 0.385, y: 0.333, width: 0.229, height: 0.333 }),
     );
-    expect(scale).toBeCloseTo(3.0, 1);
+    expect(scale).toBeCloseTo(FILL * 3.0, 1);
     expect(tx).toBeCloseTo(0, 0);
     expect(ty).toBeCloseTo(0, 0);
+  });
+
+  it("leaves a real margin on the dominant axis instead of mapping it to exactly 0%-100% of the box — Hisuian Lilligant's real measured crop, height-dominant at 0.848", () => {
+    // Regression test for a real user-reported bug: at scale=1/max(w,h)
+    // (no margin), the dominant axis's content touches the box edge with
+    // literally zero margin, which a screenshot-driven pixel simulation
+    // confirmed reads as "the sprite is getting cropped" even though every
+    // alpha>0 pixel is included. With the margin, the visible window on the
+    // dominant axis is wider (in source-fraction terms) than the crop
+    // itself, so there's real transparent padding above/below the figure.
+    const crop = { x: 0.204210526315789, y: 0.115789473684211, width: 0.595789473684211, height: 0.848421052631579 };
+    const { scale } = parseTransform(spriteCropTransform(crop));
+    const dominant = Math.max(crop.width, crop.height);
+    const visibleWindow = 1 / scale;
+    expect(visibleWindow).toBeGreaterThan(dominant);
   });
 
   it("returns a no-op transform for a degenerate (zero-size) crop instead of dividing by zero", () => {

@@ -44,22 +44,37 @@ export interface SpriteCrop {
 export const FULL_CANVAS_CROP: SpriteCrop = { x: 0, y: 0, width: 1, height: 1 };
 
 /**
+ * The crop's dominant axis fills this fraction of the box, not 100% of it —
+ * confirmed via a direct pixel-level simulation (Hisuian Lilligant, whose
+ * measured height fraction is 0.848, the dominant axis) that a literal 100%
+ * fill makes the topmost/bottommost real content pixel land exactly on the
+ * box's edge with zero margin, which reads as visually clipped even though
+ * every alpha>0 pixel is genuinely included — true for ANY crop by
+ * construction of the `1/max(width,height)` scale, not unique to one
+ * species. A uniform margin (not a per-species tweak) gives every sprite
+ * the same small breathing room the rest of the UI already has around it.
+ */
+const CROP_FILL_FRACTION = 0.92;
+
+/**
  * A CSS `transform` value that zooms a sprite `<img>` in so its own real
  * content (per `crop`) fills its box, derived purely from the crop
- * fractions — no per-species tuning. Math: scale by `1/max(width,height)`
- * (so the crop's larger dimension exactly fills the box without clipping
- * the other axis), then translate the crop's center to the box's center.
- * CSS applies the rightmost transform function to the point first, so
- * `scale` is listed after `translate` even though it conceptually happens
- * first; percentages in `translate()` resolve against the element's own
- * untransformed border-box size, independent of the `scale()` alongside
- * it, which keeps this exact regardless of the `<img>`'s rendered size.
- * The host `<img>` needs an `overflow-hidden` wrapper sized to match it —
- * this only computes the zoom, it doesn't clip anything itself.
+ * fractions — no per-species tuning. Math: scale by
+ * `CROP_FILL_FRACTION/max(width,height)` (so the crop's larger dimension
+ * fills CROP_FILL_FRACTION of the box, leaving a small margin instead of
+ * touching the edge, without clipping the other axis), then translate the
+ * crop's center to the box's center. CSS applies the rightmost transform
+ * function to the point first, so `scale` is listed after `translate` even
+ * though it conceptually happens first; percentages in `translate()`
+ * resolve against the element's own untransformed border-box size,
+ * independent of the `scale()` alongside it, which keeps this exact
+ * regardless of the `<img>`'s rendered size. The host `<img>` needs an
+ * `overflow-hidden` wrapper sized to match it — this only computes the
+ * zoom, it doesn't clip anything itself.
  */
 export function spriteCropTransform(crop: SpriteCrop): string {
   if (crop.width <= 0 || crop.height <= 0) return "none";
-  const scale = 1 / Math.max(crop.width, crop.height);
+  const scale = CROP_FILL_FRACTION / Math.max(crop.width, crop.height);
   const centerX = crop.x + crop.width / 2;
   const centerY = crop.y + crop.height / 2;
   const translateXPercent = scale * (0.5 - centerX) * 100;
