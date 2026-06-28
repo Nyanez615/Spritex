@@ -287,15 +287,14 @@ export function fromCosmeticKindFor(
  * The real sprite for (pokemonId, formId)'s own `kind` cosmetic form (e.g.
  * Sandy Burmy's actual cloak sprite), if it's present in `cosmeticForms` —
  * undefined otherwise, so the caller can fall back to the member's plain
- * sprite_url. Only ever has an entry to find when `cosmeticForms` happens to
- * be the SAME species currently being viewed (the page's own
- * getCosmeticForms query result, keyed to the current pokemonId/formId) —
- * a real, accepted scope limit: viewing the evolution line from a
- * DIFFERENT chain member's own page (e.g. from Sandy Wormadam's page
- * instead of Burmy's) doesn't have Burmy's own cosmetic_forms loaded, so
- * that lane's icon falls back to the plain sprite there. Fixing that fully
- * would need get_evolution_chain to bundle cosmetic_forms for every member,
- * not just the one being viewed — a larger backend change than this lookup.
+ * sprite_url. `cosmeticForms` here is the WHOLE evolution chain's bundled
+ * cosmetic_forms (get_evolution_chain's own `cosmetic_forms` field, not the
+ * page-level getCosmeticForms query, which only ever covers the currently-
+ * viewed species) — so this finds Burmy's Sandy/Trash cloak sprites
+ * regardless of whether the page being viewed is Burmy's own or one of its
+ * evolutions' (e.g. Wormadam's), since every member's cosmetic forms travel
+ * with the chain itself rather than being scoped to whichever one page
+ * happens to be open.
  */
 export function cosmeticSpriteFor(
   pokemonId: number,
@@ -402,7 +401,7 @@ export function EvolutionLineNav({
   edges: EvolutionChainEdge[];
   current: Pokemon;
   searchContext: Required<PokedexSearch>;
-  /** The current page's own cosmetic_forms (already fetched for the sprite gallery) — reused here so e.g. Sandy Burmy's chip can show its real cloak sprite when Burmy IS the page being viewed. See cosmeticSpriteFor's own doc comment for the scope limit when it isn't. */
+  /** The WHOLE chain's bundled cosmetic_forms (get_evolution_chain's own `cosmetic_forms` field) — covers every member, not just whichever one's page happens to be open, so e.g. Sandy Burmy's chip shows its real cloak sprite whether you're viewing Burmy's own page or Wormadam's. */
   cosmeticForms: CosmeticForm[];
 }) {
   const lanes = useMemo(() => buildEvolutionLanes(chain, edges), [chain, edges]);
@@ -819,7 +818,7 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
               edges={evolutionChain.edges}
               current={pokemon}
               searchContext={searchContext}
-              cosmeticForms={cosmeticForms ?? []}
+              cosmeticForms={evolutionChain.cosmetic_forms}
             />
           </>
         )}

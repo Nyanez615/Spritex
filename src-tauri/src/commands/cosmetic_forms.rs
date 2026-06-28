@@ -3,7 +3,7 @@ use crate::models::CosmeticForm;
 use rusqlite::{Connection, Row};
 use tauri::State;
 
-fn row_to_cosmetic_form(row: &Row) -> rusqlite::Result<CosmeticForm> {
+pub(crate) fn row_to_cosmetic_form(row: &Row) -> rusqlite::Result<CosmeticForm> {
     Ok(CosmeticForm {
         id: row.get("id")?,
         pokemon_id: row.get("pokemon_id")?,

@@ -1,3 +1,4 @@
+use crate::commands::cosmetic_forms::row_to_cosmetic_form;
 use crate::commands::pokedex::row_to_pokemon;
 use crate::db::AppState;
 use crate::models::{EvolutionChainData, EvolutionChainEdge, EvolutionChainMember};
@@ -52,14 +53,29 @@ fn get_evolution_chain_impl(conn: &Connection, pokemon_id: i32, form_id: i32) ->
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string())?;
 
-    Ok(EvolutionChainData { members, edges })
+    let mut cosmetic_stmt = conn
+        .prepare(
+            "SELECT cf.* FROM cosmetic_forms cf \
+             JOIN evolution_chains ec ON ec.pokemon_id = cf.pokemon_id AND ec.form_id = cf.form_id \
+             WHERE ec.chain_id = (SELECT chain_id FROM evolution_chains WHERE pokemon_id = ?1 AND form_id = ?2) \
+             ORDER BY cf.id",
+        )
+        .map_err(|e| e.to_string())?;
+    let cosmetic_forms = cosmetic_stmt
+        .query_map(rusqlite::params![pokemon_id, form_id], row_to_cosmetic_form)
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(EvolutionChainData { members, edges, cosmetic_forms })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::{
-        seed_evolution_chains, seed_evolution_edges, seed_static_db, TestEvolutionChainRow, TestEvolutionEdgeRow, TestPokemonRow,
+        seed_cosmetic_forms, seed_evolution_chains, seed_evolution_edges, seed_static_db, TestCosmeticFormRow, TestEvolutionChainRow,
+        TestEvolutionEdgeRow, TestPokemonRow,
     };
 
     #[test]
@@ -195,5 +211,49 @@ mod tests {
         let to_mothim = result.edges.iter().find(|e| e.to_pokemon_id == 414).unwrap();
         assert_eq!(to_wormadam.from_cosmetic_kind, Some("sandy".to_string()));
         assert_eq!(to_mothim.from_cosmetic_kind, None, "expected no cosmetic-kind requirement for the Mothim edge — any Burmy cloak can become Mothim");
+    }
+
+    #[test]
+    fn get_evolution_chain_bundles_cosmetic_forms_for_every_member_not_just_the_queried_one() {
+        let conn = seed_static_db(&[
+            TestPokemonRow { id: 412, display_name: "Burmy".into(), ..Default::default() },
+            TestPokemonRow { id: 413, display_name: "Sandy Wormadam".into(), ..Default::default() },
+        ]);
+        seed_evolution_chains(&conn, &[
+            TestEvolutionChainRow { pokemon_id: 412, form_id: 0, chain_id: 99, stage: 0 },
+            TestEvolutionChainRow { pokemon_id: 413, form_id: 0, chain_id: 99, stage: 1 },
+        ]);
+        seed_cosmetic_forms(&conn, &[
+            TestCosmeticFormRow { pokemon_id: 412, form_id: 0, kind: "sandy".into(), display_name: "Sandy Burmy".into(), ..Default::default() },
+            TestCosmeticFormRow { pokemon_id: 412, form_id: 0, kind: "trash".into(), display_name: "Trash Burmy".into(), ..Default::default() },
+        ]);
+
+        // Burmy's own cosmetic forms must come back even when the chain is
+        // queried via Wormadam's own (pokemon_id, form_id) — viewing the
+        // evolution line from Wormadam's page is exactly the case that was
+        // broken before this bundling existed, since Wormadam itself has no
+        // cosmetic_forms rows of its own.
+        let result = get_evolution_chain_impl(&conn, 413, 0).unwrap();
+        assert_eq!(result.cosmetic_forms.len(), 2);
+        assert!(result.cosmetic_forms.iter().any(|f| f.pokemon_id == 412 && f.kind == "sandy"));
+        assert!(result.cosmetic_forms.iter().any(|f| f.pokemon_id == 412 && f.kind == "trash"));
+    }
+
+    #[test]
+    fn get_evolution_chain_never_leaks_cosmetic_forms_from_a_different_chain() {
+        let conn = seed_static_db(&[
+            TestPokemonRow { id: 412, display_name: "Burmy".into(), ..Default::default() },
+            TestPokemonRow { id: 1, display_name: "Bulbasaur".into(), ..Default::default() },
+        ]);
+        seed_evolution_chains(&conn, &[
+            TestEvolutionChainRow { pokemon_id: 412, form_id: 0, chain_id: 99, stage: 0 },
+            TestEvolutionChainRow { pokemon_id: 1, form_id: 0, chain_id: 1, stage: 0 },
+        ]);
+        seed_cosmetic_forms(&conn, &[
+            TestCosmeticFormRow { pokemon_id: 412, form_id: 0, kind: "sandy".into(), display_name: "Sandy Burmy".into(), ..Default::default() },
+        ]);
+
+        let result = get_evolution_chain_impl(&conn, 1, 0).unwrap();
+        assert!(result.cosmetic_forms.is_empty(), "expected Bulbasaur's chain to see none of Burmy's cosmetic forms");
     }
 }

@@ -110,7 +110,7 @@ export const getEvolutionChain = (
   pokemonId: number,
   formId: number,
 ): Promise<EvolutionChainData> =>
-  isTauri() ? invoke("get_evolution_chain", { pokemonId, formId }) : Promise.resolve({ members: [], edges: [] });
+  isTauri() ? invoke("get_evolution_chain", { pokemonId, formId }) : Promise.resolve({ members: [], edges: [], cosmetic_forms: [] });
 
 // ── Collection ────────────────────────────────────────────────────────────────
 
