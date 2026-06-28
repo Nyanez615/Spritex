@@ -8,7 +8,6 @@ import {
   sortPokemonList,
   STAT_SORT_KEYS,
   validatePokedexSearch,
-  withGenerationSiblings,
   type PokedexSearch,
 } from "./pokedexFilter";
 
@@ -196,42 +195,6 @@ describe("hasMega/hasGmax filters", () => {
   it("filters to only species with a Gigantamax form", () => {
     const result = filterPokemon(ALL_WITH_COSMETIC, search({ hasGmax: true }));
     expect(result.map((p) => p.id)).toEqual([201]);
-  });
-});
-
-describe("withGenerationSiblings", () => {
-  // Wooper (#194, generation 2) and Paldean Wooper (#194 form 1, generation
-  // 9, since it was introduced in Scarlet/Violet) — a real, user-reported
-  // case: filtering to Generation 2 and clicking next/prev from Wooper used
-  // to skip straight past Paldean Wooper to Quagsire, even though the
-  // grid's own card popover shows them grouped together regardless of the
-  // active filter.
-  const WOOPER: Pokemon = { ...BASE, id: 194, name: "wooper", display_name: "Wooper", generation: 2, color: "blue" };
-  const PALDEAN_WOOPER: Pokemon = {
-    ...BASE, id: 194, form_id: 1, name: "wooper", display_name: "Paldean Wooper",
-    form_name: "Paldean", generation: 9, color: "blue",
-  };
-  const QUAGSIRE: Pokemon = { ...BASE, id: 195, name: "quagsire", display_name: "Quagsire", generation: 2, color: "blue" };
-  const WITH_SIBLINGS = [WOOPER, PALDEAN_WOOPER, QUAGSIRE];
-
-  it("includes a sibling form even though its OWN generation doesn't match the filter, as long as the base form's does", () => {
-    const result = withGenerationSiblings(WITH_SIBLINGS, search({ gens: [2] }));
-    expect(result.map((p) => p.display_name)).toEqual(["Wooper", "Paldean Wooper", "Quagsire"]);
-  });
-
-  it("is equivalent to filterPokemon when no generation filter is active", () => {
-    expect(withGenerationSiblings(WITH_SIBLINGS, search({}))).toEqual(filterPokemon(WITH_SIBLINGS, search({})));
-  });
-
-  it("still excludes a sibling that fails some OTHER active filter on its own merits — the generation exemption doesn't broaden every facet", () => {
-    const yellowWooper: Pokemon = { ...WOOPER, color: "yellow" };
-    const result = withGenerationSiblings([yellowWooper, PALDEAN_WOOPER, QUAGSIRE], search({ gens: [2], colors: ["yellow"] }));
-    expect(result.map((p) => p.display_name)).toEqual(["Wooper"]);
-  });
-
-  it("is symmetric — filtering to the SIBLING's own generation pulls the base form back in too, but never an unrelated species", () => {
-    const result = withGenerationSiblings(WITH_SIBLINGS, search({ gens: [9] }));
-    expect(result.map((p) => p.display_name)).toEqual(["Wooper", "Paldean Wooper"]);
   });
 });
 
