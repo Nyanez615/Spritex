@@ -1149,3 +1149,59 @@ test("Arceus (#493)'s 18 type-form sprites each have their own distinct sprite_u
   const distinctSprites = new Set(arceusForms.map((f) => f.sprite_url));
   assert.equal(distinctSprites.size, arceusForms.length);
 });
+
+test("Unown B (#201)'s cosmetic_forms sprite_crop fields match its real measured alpha bounding box — confirmed by directly downloading the live sprite and computing its non-transparent content region with PIL: content occupies pixels (37,32)-(58,63) of a 96x96 canvas, i.e. x~0.385/y~0.333/width~0.229/height~0.333 — this is the data the user-reported \"why are they appearing so small\" bug traces back to: PokéAPI's pokemon-form sprites are this heavily padded, with no official-artwork variant to fall back to", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const unownB = cosmeticForms.find((f) => f.pokemon_id === 201 && f.kind === "b")!;
+  assert.ok(Math.abs(unownB.sprite_crop_x - 0.385) < 0.01);
+  assert.ok(Math.abs(unownB.sprite_crop_y - 0.333) < 0.01);
+  assert.ok(Math.abs(unownB.sprite_crop_width - 0.229) < 0.01);
+  assert.ok(Math.abs(unownB.sprite_crop_height - 0.333) < 0.01);
+});
+
+test("sprite_crop varies by species rather than being a fixed/default value — Unown B's sprite content fills far less of its canvas than Arceus Fire's, confirming the crop is genuinely derived per-sprite (a uniform CSS zoom large enough to fix Unown would clip Arceus)", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const unownB = cosmeticForms.find((f) => f.pokemon_id === 201 && f.kind === "b")!;
+  const arceusFire = cosmeticForms.find((f) => f.pokemon_id === 493 && f.kind === "fire")!;
+  assert.ok(unownB.sprite_crop_width < 0.3, "expected Unown B's content to fill well under a third of its canvas width");
+  assert.ok(arceusFire.sprite_crop_width > 0.6, "expected Arceus Fire's content to already fill most of its canvas width");
+});
+
+test("Mega/Gigantamax cosmetic_forms sprites (sourced from full PokéAPI pokemon resources with real official artwork, not the small pokemon-form sprites) get a near-full-canvas sprite_crop, confirming the crop computation is a safe no-op for sprites that were never the small/padded kind in the first place", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const megaCharizardX = cosmeticForms.find((f) => f.pokemon_id === 6 && f.kind === "mega_x")!;
+  assert.ok(megaCharizardX.sprite_crop_width > 0.7);
+  assert.ok(megaCharizardX.sprite_crop_height > 0.7);
+});
+
+test("pokemon rows also get a real, non-degenerate sprite_crop — generalized from cosmetic_forms once the user asked for the same fix everywhere, since bestSprite()'s fallback chain means a real pokemon row's own sprite_url could in principle hit the identical small/padded-basic-sprite bug if a species ever lacked official-artwork/home sprites, even though none currently do", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const bulbasaur = pokemon.find((p) => p.id === 1 && p.form_id === 0)!;
+  assert.ok(bulbasaur.sprite_crop_width > 0, "expected a real measured crop, not a zero-size fallback");
+  assert.ok(bulbasaur.sprite_crop_height > 0);
+  // Official artwork is tightly cropped — a near-no-op, unlike Unown's tiny
+  // ~23%x33% pokemon-form-sourced fill.
+  assert.ok(bulbasaur.sprite_crop_width > 0.7);
+  assert.ok(bulbasaur.sprite_crop_height > 0.7);
+});
+
+test("pokemon rows with a real gender-difference sprite (e.g. Venusaur, whose petal count differs by sex) get a sprite_crop_*_female genuinely distinct from the male/default sprite_crop — confirming the female crop is independently measured, not copied from the male crop", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const venusaur = pokemon.find((p) => p.id === 3 && p.form_id === 0)!;
+  assert.ok(venusaur.sprite_url_female, "expected Venusaur to have a real gender-difference sprite");
+  const sameAsCropMale =
+    venusaur.sprite_crop_x === venusaur.sprite_crop_x_female &&
+    venusaur.sprite_crop_y === venusaur.sprite_crop_y_female &&
+    venusaur.sprite_crop_width === venusaur.sprite_crop_width_female &&
+    venusaur.sprite_crop_height === venusaur.sprite_crop_height_female;
+  assert.ok(!sameAsCropMale, "expected the female crop to be independently measured from its own sprite, not copied from the male/default crop");
+});
+
+test("pokemon rows with NO gender-difference sprite default sprite_crop_*_female to the full canvas (a safe no-op), rather than an arbitrary/garbage value", async () => {
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const genderless = pokemon.find((p) => !p.sprite_url_female)!;
+  assert.equal(genderless.sprite_crop_x_female, 0);
+  assert.equal(genderless.sprite_crop_y_female, 0);
+  assert.equal(genderless.sprite_crop_width_female, 1);
+  assert.equal(genderless.sprite_crop_height_female, 1);
+});

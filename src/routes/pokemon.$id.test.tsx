@@ -22,6 +22,14 @@ const BULBASAUR: Pokemon = {
   shiny_sprite_url: "bulbasaur-shiny.png",
   sprite_url_female: null,
   shiny_sprite_url_female: null,
+  sprite_crop_x: 0,
+  sprite_crop_y: 0,
+  sprite_crop_width: 1,
+  sprite_crop_height: 1,
+  sprite_crop_x_female: 0,
+  sprite_crop_y_female: 0,
+  sprite_crop_width_female: 1,
+  sprite_crop_height_female: 1,
   types: '["grass","poison"]',
   gender_rate: 1,
   is_mythical: false,
@@ -70,6 +78,61 @@ describe("buildSpriteVariants", () => {
     expect(variants.map((v) => v.label)).toEqual(["Standard"]);
   });
 
+  it("omits a cosmetic form entirely when it has no sprite art at all — regression test for a real bug: PokéAPI's \"sinistcha-masterpiece\" form (confirmed live) has front_default/front_shiny/back_default all null, so sprite_url comes out \"\" — the gallery used to still push a tile for it, rendering a broken <img src=\"\">", () => {
+    const masterpieceWithNoArt: CosmeticForm = {
+      id: 1, pokemon_id: 1013, form_id: 0, kind: "masterpiece", display_name: "Masterpiece Form Sinistcha",
+      sprite_url: "", shiny_sprite_url: "",
+      sprite_crop_x: 0, sprite_crop_y: 0, sprite_crop_width: 1, sprite_crop_height: 1,
+      mega_stone_item: null, types: "[]", height: 2, weight: 2, abilities: "[]",
+      stat_hp: 1, stat_attack: 1, stat_defense: 1, stat_special_attack: 1, stat_special_defense: 1, stat_speed: 1,
+      stat_total: 6, base_experience: 0, ev_yield_hp: 0, ev_yield_attack: 0, ev_yield_defense: 0,
+      ev_yield_special_attack: 0, ev_yield_special_defense: 0, ev_yield_speed: 0,
+    };
+    const variants = buildSpriteVariants(BULBASAUR, [masterpieceWithNoArt]);
+    expect(variants.map((v) => v.label)).toEqual(["Standard", "Shiny"]);
+  });
+
+  it("gives standard/shiny tiles the pokemon row's own measured sprite_crop_*, and a cosmetic form's own measured crop to both its standard and shiny tiles", () => {
+    // A distinctly non-full-canvas crop, proving buildSpriteVariants actually
+    // reads pokemon.sprite_crop_* rather than hardcoding the full canvas —
+    // confirmed real (not just a hypothetical): bestSprite()'s fallback
+    // chain means a real pokemon row's own sprite_url could in principle hit
+    // the same padded-basic-sprite bug cosmetic_forms sprites were fixed
+    // for, so this is measured unconditionally for every pokemon row too.
+    const partiallyCropped: Pokemon = { ...BULBASAUR, sprite_crop_x: 0.1, sprite_crop_y: 0.2, sprite_crop_width: 0.5, sprite_crop_height: 0.6 };
+    const unownB: CosmeticForm = {
+      id: 1, pokemon_id: 201, form_id: 0, kind: "b", display_name: "Unown B",
+      sprite_url: "unown-b.png", shiny_sprite_url: "unown-b-shiny.png",
+      sprite_crop_x: 0.385, sprite_crop_y: 0.333, sprite_crop_width: 0.229, sprite_crop_height: 0.333,
+      mega_stone_item: null, types: "[]", height: 5, weight: 5, abilities: "[]",
+      stat_hp: 1, stat_attack: 1, stat_defense: 1, stat_special_attack: 1, stat_special_defense: 1, stat_speed: 1,
+      stat_total: 6, base_experience: 0, ev_yield_hp: 0, ev_yield_attack: 0, ev_yield_defense: 0,
+      ev_yield_special_attack: 0, ev_yield_special_defense: 0, ev_yield_speed: 0,
+    };
+    const variants = buildSpriteVariants(partiallyCropped, [unownB]);
+    const [standard, shiny, cosmeticStandard, cosmeticShiny] = variants;
+    expect(standard.crop).toEqual({ x: 0.1, y: 0.2, width: 0.5, height: 0.6 });
+    expect(shiny.crop).toEqual({ x: 0.1, y: 0.2, width: 0.5, height: 0.6 });
+    expect(cosmeticStandard.crop).toEqual({ x: 0.385, y: 0.333, width: 0.229, height: 0.333 });
+    expect(cosmeticShiny.crop).toEqual({ x: 0.385, y: 0.333, width: 0.229, height: 0.333 });
+  });
+
+  it("gives Female/Shiny Female tiles their own separately-measured sprite_crop_*_female, distinct from the standard/shiny crop", () => {
+    const withGenderDifference: Pokemon = {
+      ...BULBASAUR,
+      sprite_url_female: "bulbasaur-f.png",
+      shiny_sprite_url_female: "bulbasaur-f-shiny.png",
+      sprite_crop_x: 0, sprite_crop_y: 0, sprite_crop_width: 1, sprite_crop_height: 1,
+      sprite_crop_x_female: 0.3, sprite_crop_y_female: 0.4, sprite_crop_width_female: 0.4, sprite_crop_height_female: 0.2,
+    };
+    const variants = buildSpriteVariants(withGenderDifference, []);
+    const [male, shinyMale, female, shinyFemale] = variants;
+    expect(male.crop).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+    expect(shinyMale.crop).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+    expect(female.crop).toEqual({ x: 0.3, y: 0.4, width: 0.4, height: 0.2 });
+    expect(shinyFemale.crop).toEqual({ x: 0.3, y: 0.4, width: 0.4, height: 0.2 });
+  });
+
   it("omits a cosmetic form's Shiny tile the same way, while keeping its standard tile", () => {
     const cosmeticForm: CosmeticForm = {
       id: 1,
@@ -79,6 +142,10 @@ describe("buildSpriteVariants", () => {
       display_name: "Mega Bulbasaur",
       sprite_url: "mega.png",
       shiny_sprite_url: "",
+      sprite_crop_x: 0,
+      sprite_crop_y: 0,
+      sprite_crop_width: 1,
+      sprite_crop_height: 1,
       mega_stone_item: "bulbasaurite",
       types: '["grass","poison"]',
       height: 7,
@@ -106,8 +173,8 @@ describe("buildSpriteVariants", () => {
 
 describe("SpriteGalleryDialog", () => {
   const variants = [
-    { src: "standard.png", label: "Standard", cosmeticForm: null },
-    { src: "shiny.png", label: "Shiny", cosmeticForm: null },
+    { src: "standard.png", label: "Standard", cosmeticForm: null, crop: { x: 0, y: 0, width: 1, height: 1 } },
+    { src: "shiny.png", label: "Shiny", cosmeticForm: null, crop: { x: 0, y: 0, width: 1, height: 1 } },
   ];
 
   it("is closed when index is null", () => {
@@ -334,6 +401,10 @@ describe("applyCosmeticForm", () => {
     display_name: "Mega Venusaur",
     sprite_url: "mega-venusaur.png",
     shiny_sprite_url: "mega-venusaur-shiny.png",
+    sprite_crop_x: 0,
+    sprite_crop_y: 0,
+    sprite_crop_width: 1,
+    sprite_crop_height: 1,
     mega_stone_item: "venusaurite",
     types: '["grass","poison"]',
     height: 24,

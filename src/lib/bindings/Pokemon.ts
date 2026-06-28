@@ -6,6 +6,24 @@ export type Pokemon = { id: number, name: string, display_name: string, form_id:
  */
 sprite_url_female: string | null, shiny_sprite_url_female: string | null, 
 /**
+ * sprite_url's own non-transparent content region, as fractions (0..1)
+ * of its canvas — see cosmetic_forms' CosmeticForm.sprite_crop_x doc
+ * comment for the full reasoning. Almost always a near-no-op here
+ * (sprite_url usually resolves to tightly-cropped official artwork),
+ * computed unconditionally anyway so any future species/variety that
+ * ever lacks official-artwork/home sprites gets the same fix
+ * automatically. Also applies to shiny_sprite_url (a shiny sprite is a
+ * pure palette recolor sharing the same alpha shape, confirmed live).
+ */
+sprite_crop_x: number, sprite_crop_y: number, sprite_crop_width: number, sprite_crop_height: number, 
+/**
+ * Same idea, measured separately from sprite_url_female (a genuinely
+ * different sprite when has_gender_differences is true, not just a
+ * recolor) — full-canvas defaults when there's no gender-difference
+ * sprite to crop at all.
+ */
+sprite_crop_x_female: number, sprite_crop_y_female: number, sprite_crop_width_female: number, sprite_crop_height_female: number, 
+/**
  * JSON-encoded array of type names, e.g. `["grass","poison"]`
  */
 types: string, 

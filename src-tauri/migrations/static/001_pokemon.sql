@@ -9,6 +9,26 @@ CREATE TABLE pokemon (
     shiny_sprite_url         TEXT    NOT NULL,
     sprite_url_female        TEXT,
     shiny_sprite_url_female  TEXT,
+    -- The sprite's own non-transparent content region, as fractions (0..1)
+    -- of its canvas — see cosmetic_forms' own sprite_crop_x doc comment for
+    -- the full reasoning (PokéAPI's basic battle sprites are inconsistently
+    -- padded across species, so a fixed CSS zoom can't safely fit every one
+    -- without clipping some). Almost always a near-no-op for this table
+    -- (sprite_url usually resolves to tightly-cropped official artwork via
+    -- bestSprite()'s fallback chain), computed unconditionally anyway so any
+    -- future species/variety that ever lacks official-artwork/home sprites
+    -- gets the same fix automatically. _female fields are measured
+    -- separately from sprite_url_female (a genuinely different sprite when
+    -- has_gender_differences is true, not just a recolor); default to the
+    -- full canvas when there's no gender-difference sprite to crop.
+    sprite_crop_x            REAL    NOT NULL DEFAULT 0,
+    sprite_crop_y            REAL    NOT NULL DEFAULT 0,
+    sprite_crop_width        REAL    NOT NULL DEFAULT 1,
+    sprite_crop_height       REAL    NOT NULL DEFAULT 1,
+    sprite_crop_x_female      REAL    NOT NULL DEFAULT 0,
+    sprite_crop_y_female      REAL    NOT NULL DEFAULT 0,
+    sprite_crop_width_female  REAL    NOT NULL DEFAULT 1,
+    sprite_crop_height_female REAL    NOT NULL DEFAULT 1,
     types                    TEXT    NOT NULL,
     gender_rate              INTEGER NOT NULL,
     is_mythical              INTEGER NOT NULL DEFAULT 0,

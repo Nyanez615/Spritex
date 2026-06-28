@@ -16,6 +16,7 @@
  */
 import { cachedJson, ConcurrencyLimiter, writeOutJson } from "./httpCache.js";
 import { fetchMegaStoneMap } from "./megaStones.js";
+import { cachedSpriteCrop, FULL_CANVAS_CROP } from "./spriteCrop.js";
 
 const POKEAPI_BASE = "https://pokeapi.co/api/v2";
 
@@ -349,6 +350,28 @@ export interface FetchedVariety {
   /** Gender-difference sprites — null for the ~90% of species with no visual gender difference. */
   spriteUrlFemale: string | null;
   shinySpriteUrlFemale: string | null;
+  /**
+   * spriteUrl's own non-transparent content region, as fractions (0..1) of
+   * its canvas — see spriteCrop.ts's header for why this exists. Computed
+   * once from spriteUrl and reused for shinySpriteUrl too: confirmed live
+   * (Unown B) that a shiny sprite is a pure palette recolor sharing the
+   * exact same alpha channel as its non-shiny counterpart, never a redraw.
+   * bestSprite() usually resolves to tightly-cropped official artwork for
+   * real pokemon rows (this comes out near-full-canvas, a safe no-op), but
+   * nothing guarantees that forever — computed unconditionally so any
+   * future species/variety that ever falls through to the small basic
+   * sprite gets the same fix automatically, not just decorative
+   * cosmetic_forms sprites.
+   */
+  spriteCropX: number;
+  spriteCropY: number;
+  spriteCropWidth: number;
+  spriteCropHeight: number;
+  /** Same idea as spriteCropX/Y/Width/Height, computed separately from spriteUrlFemale when it exists (a genuinely different sprite, not just a recolor) — FULL_CANVAS_CROP when there's no gender-difference sprite to crop. */
+  spriteCropXFemale: number;
+  spriteCropYFemale: number;
+  spriteCropWidthFemale: number;
+  spriteCropHeightFemale: number;
   height: number;
   weight: number;
   abilities: Array<{ name: string; isHidden: boolean }>;
@@ -399,6 +422,17 @@ export interface FetchedCosmeticForm {
   displayName: string;
   spriteUrl: string;
   shinySpriteUrl: string;
+  /**
+   * spriteUrl's own non-transparent content region, as fractions (0..1) of
+   * its canvas — see spriteCrop.ts's header for why this exists. Computed
+   * once from spriteUrl and reused for shinySpriteUrl too: confirmed live
+   * (Unown B) that a shiny sprite is a pure palette recolor sharing the
+   * exact same alpha channel as its non-shiny counterpart, never a redraw.
+   */
+  spriteCropX: number;
+  spriteCropY: number;
+  spriteCropWidth: number;
+  spriteCropHeight: number;
   /** PokéAPI item slug, e.g. "venusaurite" — null for Gigantamax (no held item). */
   megaStoneItem: string | null;
   /**
@@ -614,13 +648,15 @@ async function extraSpriteForms(
   limiter: ConcurrencyLimiter,
   pokemon: PokeApiPokemon,
   ownFormId: number,
-  shared: Omit<FetchedCosmeticForm, "pokemonId" | "baseFormId" | "kind" | "displayName" | "spriteUrl" | "shinySpriteUrl" | "megaStoneItem">,
+  shared: Omit<FetchedCosmeticForm, "pokemonId" | "baseFormId" | "kind" | "displayName" | "spriteUrl" | "shinySpriteUrl" | "spriteCropX" | "spriteCropY" | "spriteCropWidth" | "spriteCropHeight" | "megaStoneItem">,
 ): Promise<FetchedCosmeticForm[]> {
   if (pokemon.forms.length <= 1) return [];
   const extras: FetchedCosmeticForm[] = [];
   for (const formRef of pokemon.forms) {
     const form = await limiter.run(() => cachedJson<PokeApiForm>("pokeapi-form", formRef.name, formRef.url));
     if (form.is_default || form.form_name === "female") continue;
+    const spriteUrl = bestSprite(form.sprites, false);
+    const crop = await limiter.run(() => cachedSpriteCrop(spriteUrl));
     extras.push({
       // `shared` spreads FIRST — it's the parent variety's own sprite/types/
       // stats, used as the fallback for everything this form doesn't
@@ -634,8 +670,12 @@ async function extraSpriteForms(
       baseFormId: ownFormId,
       kind: form.form_name,
       displayName: englishName(form.names, pokemon.name),
-      spriteUrl: bestSprite(form.sprites, false),
+      spriteUrl,
       shinySpriteUrl: bestSprite(form.sprites, true),
+      spriteCropX: crop.x,
+      spriteCropY: crop.y,
+      spriteCropWidth: crop.width,
+      spriteCropHeight: crop.height,
       megaStoneItem: null,
       types: form.types.length > 0 ? form.types.map((t) => t.type.name) : shared.types,
     });
@@ -652,12 +692,36 @@ async function fetchVarietyDetail(
   megaStoneMap: Map<string, string>,
 ): Promise<{ variety?: FetchedVariety; cosmeticForm?: FetchedCosmeticForm; extraCosmeticForms: FetchedCosmeticForm[] }> {
   const pokemon = await limiter.run(() => cachedJson<PokeApiPokemon>("pokeapi-pokemon", variety.pokemon.name, variety.pokemon.url));
+  const spriteUrl = bestSprite(pokemon.sprites, false);
+  const shinySpriteUrl = bestSprite(pokemon.sprites, true);
+  const spriteUrlFemale = femaleSprite(pokemon.sprites, false);
+  const shinySpriteUrlFemale = femaleSprite(pokemon.sprites, true);
+  // Computed unconditionally, not just for the cosmetic-form sprite sources
+  // that originally motivated this — bestSprite()'s own fallback chain
+  // (official-artwork -> home -> the same small/padded basic sprite every
+  // pokemon-form resource is stuck with) means a real `pokemon` row's own
+  // sprite could in principle hit the identical bug if a future species/
+  // variety ever lacks official-artwork/home sprites, even though none
+  // currently do. spriteUrlFemale gets its own separately-measured crop
+  // (a genuinely different sprite when has_gender_differences is true, not
+  // just a recolor) — FULL_CANVAS_CROP when there's no gender-difference
+  // sprite to crop at all.
+  const spriteCrop = await limiter.run(() => cachedSpriteCrop(spriteUrl));
+  const spriteCropFemale = spriteUrlFemale ? await limiter.run(() => cachedSpriteCrop(spriteUrlFemale)) : FULL_CANVAS_CROP;
   const shared = {
     types: pokemon.types.map((t) => t.type.name),
-    spriteUrl: bestSprite(pokemon.sprites, false),
-    shinySpriteUrl: bestSprite(pokemon.sprites, true),
-    spriteUrlFemale: femaleSprite(pokemon.sprites, false),
-    shinySpriteUrlFemale: femaleSprite(pokemon.sprites, true),
+    spriteUrl,
+    shinySpriteUrl,
+    spriteUrlFemale,
+    shinySpriteUrlFemale,
+    spriteCropX: spriteCrop.x,
+    spriteCropY: spriteCrop.y,
+    spriteCropWidth: spriteCrop.width,
+    spriteCropHeight: spriteCrop.height,
+    spriteCropXFemale: spriteCropFemale.x,
+    spriteCropYFemale: spriteCropFemale.y,
+    spriteCropWidthFemale: spriteCropFemale.width,
+    spriteCropHeightFemale: spriteCropFemale.height,
     height: pokemon.height,
     weight: pokemon.weight,
     abilities: pokemon.abilities.map((a) => ({ name: a.ability.name, isHidden: a.is_hidden })),
@@ -694,6 +758,8 @@ async function fetchVarietyDetail(
     ) {
       const kind = cosmeticFormKind(form);
       if (!kind) return { extraCosmeticForms }; // other battle-only cosmetic (Crowned, Eternamax, ...) — not modeled
+      // shared.spriteCrop* was already computed from this exact spriteUrl
+      // above — no need to hit cachedSpriteCrop's cache a second time.
       return {
         extraCosmeticForms,
         cosmeticForm: {
@@ -701,8 +767,12 @@ async function fetchVarietyDetail(
           baseFormId: 0, // placeholder — the caller re-resolves this via resolveCosmeticBaseFormId once the species' full varieties list is known
           kind,
           displayName: englishName(form.names, pokemon.name),
-          spriteUrl: bestSprite(pokemon.sprites, false),
-          shinySpriteUrl: bestSprite(pokemon.sprites, true),
+          spriteUrl: shared.spriteUrl,
+          shinySpriteUrl: shared.shinySpriteUrl,
+          spriteCropX: shared.spriteCropX,
+          spriteCropY: shared.spriteCropY,
+          spriteCropWidth: shared.spriteCropWidth,
+          spriteCropHeight: shared.spriteCropHeight,
           megaStoneItem: kind === "gmax" ? null : megaStoneMap.get(`${speciesName}:${kind}`) ?? null,
           types: shared.types,
           height: shared.height,

@@ -6,7 +6,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const CACHE_ROOT = path.join(HERE, "..", ".cache");
 export const OUT_ROOT = path.join(HERE, "..", "out");
 
-const USER_AGENT = "SpritexSeedGen/0.1 (unofficial fan project; https://github.com/Nyanez615/Spritex)";
+export const USER_AGENT = "SpritexSeedGen/0.1 (unofficial fan project; https://github.com/Nyanez615/Spritex)";
 
 /**
  * Confirmed real bug found during the first-50-species audit: the generic
@@ -17,15 +17,17 @@ const USER_AGENT = "SpritexSeedGen/0.1 (unofficial fan project; https://github.c
  * fetched; every one of its shiny_methods rows was silently a byte-for-byte
  * copy of Nidoran♀'s. Substituting distinct ASCII tokens before the generic
  * fallback runs fixes this pair and any future case with the same shape.
+ * Exported so every disk-cache key in this pipeline (not just cachedJson's)
+ * gets the same fix — see spriteCrop.ts, which caches by full sprite URL.
  */
-function sanitizeKey(key: string): string {
+export function sanitizeKey(key: string): string {
   return key
     .replace(/♀/g, "-female")
     .replace(/♂/g, "-male")
     .replace(/[^a-zA-Z0-9_.-]/g, "_");
 }
 
-async function readCache<T>(file: string): Promise<T | undefined> {
+export async function readCache<T>(file: string): Promise<T | undefined> {
   try {
     const raw = await readFile(file, "utf8");
     return JSON.parse(raw) as T;
@@ -34,7 +36,7 @@ async function readCache<T>(file: string): Promise<T | undefined> {
   }
 }
 
-async function writeCache(file: string, data: unknown): Promise<void> {
+export async function writeCache(file: string, data: unknown): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, JSON.stringify(data), "utf8");
 }
@@ -49,20 +51,32 @@ export async function cachedJson<T>(namespace: string, key: string, url: string)
   const cached = await readCache<T>(file);
   if (cached !== undefined) return cached;
 
-  const data = await fetchJsonWithRetry<T>(url);
+  const data = await fetchWithRetry<T>(url, (res) => res.json() as Promise<T>, { Accept: "application/json" });
   await writeCache(file, data);
   return data;
 }
 
-async function fetchJsonWithRetry<T>(url: string, attempt = 1): Promise<T> {
+/**
+ * Fetches a URL with retry-with-backoff, handing the raw Response to `parse`
+ * once it's known to be `ok` — shared by cachedJson (parses JSON) and
+ * spriteCrop.ts's cachedSpriteCrop (parses raw PNG bytes), so the retry
+ * policy (4 attempts, 500ms*attempt backoff) and User-Agent live in one
+ * place rather than two independently-maintained copies.
+ */
+export async function fetchWithRetry<T>(
+  url: string,
+  parse: (res: Response) => Promise<T>,
+  extraHeaders?: Record<string, string>,
+  attempt = 1,
+): Promise<T> {
   try {
-    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "application/json" } });
+    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT, ...extraHeaders } });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
-    return (await res.json()) as T;
+    return await parse(res);
   } catch (err) {
     if (attempt >= 4) throw err;
     await sleep(500 * attempt);
-    return fetchJsonWithRetry<T>(url, attempt + 1);
+    return fetchWithRetry<T>(url, parse, extraHeaders, attempt + 1);
   }
 }
 

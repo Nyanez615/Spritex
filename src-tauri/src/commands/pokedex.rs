@@ -15,6 +15,14 @@ pub(crate) fn row_to_pokemon(row: &Row) -> rusqlite::Result<Pokemon> {
         shiny_sprite_url: row.get("shiny_sprite_url")?,
         sprite_url_female: row.get("sprite_url_female")?,
         shiny_sprite_url_female: row.get("shiny_sprite_url_female")?,
+        sprite_crop_x: row.get("sprite_crop_x")?,
+        sprite_crop_y: row.get("sprite_crop_y")?,
+        sprite_crop_width: row.get("sprite_crop_width")?,
+        sprite_crop_height: row.get("sprite_crop_height")?,
+        sprite_crop_x_female: row.get("sprite_crop_x_female")?,
+        sprite_crop_y_female: row.get("sprite_crop_y_female")?,
+        sprite_crop_width_female: row.get("sprite_crop_width_female")?,
+        sprite_crop_height_female: row.get("sprite_crop_height_female")?,
         types: row.get("types")?,
         gender_rate: row.get("gender_rate")?,
         is_mythical: row.get::<_, i32>("is_mythical")? != 0,
@@ -192,5 +200,32 @@ mod tests {
         let conn = seed_static_db(&rows);
         let results = search_pokemon_impl(&conn, "SPECIES").unwrap();
         assert_eq!(results.len(), 25, "expected the LIMIT 25 cap to apply");
+    }
+
+    #[test]
+    fn get_pokemon_detail_defaults_sprite_crop_to_the_full_canvas_when_unset() {
+        let conn = seed_static_db(&[pokemon_row(1, "bulbasaur", 1, false)]);
+        let result = get_pokemon_detail_impl(&conn, 1, 0).unwrap();
+        assert_eq!(result.sprite_crop_x, 0.0);
+        assert_eq!(result.sprite_crop_y, 0.0);
+        assert_eq!(result.sprite_crop_width, 1.0);
+        assert_eq!(result.sprite_crop_height, 1.0);
+        assert_eq!(result.sprite_crop_width_female, 1.0);
+        assert_eq!(result.sprite_crop_height_female, 1.0);
+    }
+
+    #[test]
+    fn get_pokemon_detail_round_trips_real_sprite_crop_values() {
+        let conn = seed_static_db(&[pokemon_row(201, "unown", 2, false)]);
+        conn.execute(
+            "UPDATE pokemon SET sprite_crop_x = 0.385, sprite_crop_y = 0.333, sprite_crop_width = 0.229, sprite_crop_height = 0.333 WHERE id = 201",
+            [],
+        )
+        .unwrap();
+        let result = get_pokemon_detail_impl(&conn, 201, 0).unwrap();
+        assert_eq!(result.sprite_crop_x, 0.385);
+        assert_eq!(result.sprite_crop_y, 0.333);
+        assert_eq!(result.sprite_crop_width, 0.229);
+        assert_eq!(result.sprite_crop_height, 0.333);
     }
 }

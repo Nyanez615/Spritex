@@ -58,7 +58,9 @@ import {
   formatGenderRate,
   formatOdds,
   parseJsonArray,
+  spriteCropTransform,
   type PokemonAbility,
+  type SpriteCrop,
 } from "@/lib/format";
 import {
   GAME_LABELS,
@@ -606,6 +608,7 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
                   key={variant.label}
                   src={variant.src}
                   label={variant.label}
+                  crop={variant.crop}
                   selected={i === galleryIndex}
                   onClick={() => trackVariant(i)}
                 />
@@ -618,6 +621,7 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
                     key={variant.label}
                     src={variant.src}
                     label={variant.label}
+                    crop={variant.crop}
                     selected={i === galleryIndex}
                     onClick={() => trackVariant(i)}
                   />
@@ -753,6 +757,8 @@ interface SpriteVariant {
   label: string;
   /** The Mega/Gmax cosmetic form this sprite belongs to, if any — null for every standard/shiny/gendered sprite. Drives displayPokemon's view-switch when selected. */
   cosmeticForm: CosmeticForm | null;
+  /** src's own real, measured non-transparent content region (from pokemon.sprite_crop_x/y/width/height, or a cosmetic form's own sprite_crop_x/y/width/height) — usually near-no-op for standard/shiny/gendered sprites, which are typically tightly-cropped official artwork, but always genuinely measured, not assumed. See spriteCropTransform's doc comment for why this is needed at all. */
+  crop: SpriteCrop;
 }
 
 /**
@@ -768,32 +774,52 @@ export function buildSpriteVariants(
   cosmeticForms: CosmeticForm[] | undefined,
 ): SpriteVariant[] {
   const hasGenderSprites = Boolean(pokemon.sprite_url_female || pokemon.shiny_sprite_url_female);
+  // Computed from the species' own measured crop, not hardcoded to
+  // FULL_CANVAS_CROP — bestSprite() (tools/seed-gen/src/fetchPokeapi.ts)
+  // usually resolves sprite_url to tightly-cropped official artwork, which
+  // measures out near-full-canvas anyway (a safe no-op), but nothing
+  // guarantees that forever; computing it for real means any future
+  // species/variety that ever falls through to a padded basic sprite gets
+  // the same fix automatically, the same reasoning cosmetic_forms sprites
+  // already get it for.
+  const crop = { x: pokemon.sprite_crop_x, y: pokemon.sprite_crop_y, width: pokemon.sprite_crop_width, height: pokemon.sprite_crop_height };
+  const cropFemale = { x: pokemon.sprite_crop_x_female, y: pokemon.sprite_crop_y_female, width: pokemon.sprite_crop_width_female, height: pokemon.sprite_crop_height_female };
   return [
-    { src: pokemon.sprite_url, label: hasGenderSprites ? "Male" : "Standard", cosmeticForm: null },
+    { src: pokemon.sprite_url, label: hasGenderSprites ? "Male" : "Standard", cosmeticForm: null, crop },
     ...(pokemon.shiny_sprite_url
-      ? [{ src: pokemon.shiny_sprite_url, label: hasGenderSprites ? "Shiny Male" : "Shiny", cosmeticForm: null }]
+      ? [{ src: pokemon.shiny_sprite_url, label: hasGenderSprites ? "Shiny Male" : "Shiny", cosmeticForm: null, crop }]
       : []),
     ...(pokemon.sprite_url_female
-      ? [{ src: pokemon.sprite_url_female, label: "Female", cosmeticForm: null }]
+      ? [{ src: pokemon.sprite_url_female, label: "Female", cosmeticForm: null, crop: cropFemale }]
       : []),
     ...(pokemon.shiny_sprite_url_female
-      ? [{ src: pokemon.shiny_sprite_url_female, label: "Shiny Female", cosmeticForm: null }]
+      ? [{ src: pokemon.shiny_sprite_url_female, label: "Shiny Female", cosmeticForm: null, crop: cropFemale }]
       : []),
-    ...(cosmeticForms ?? []).flatMap((f) => [
-      { src: f.sprite_url, label: f.display_name, cosmeticForm: f },
-      ...(f.shiny_sprite_url ? [{ src: f.shiny_sprite_url, label: `Shiny ${f.display_name}`, cosmeticForm: f }] : []),
-    ]),
+    // A form with no sprite art at all (e.g. PokéAPI's "sinistcha-masterpiece"
+    // form, confirmed live: front_default/front_shiny/back_default are all
+    // null) gets sprite_url:"" — skipped entirely rather than rendering a
+    // broken `<img src="">` tile, the same reasoning the existing
+    // shiny-specific skip below already applies to an empty shiny_sprite_url.
+    ...(cosmeticForms ?? []).filter((f) => f.sprite_url).flatMap((f) => {
+      const crop = { x: f.sprite_crop_x, y: f.sprite_crop_y, width: f.sprite_crop_width, height: f.sprite_crop_height };
+      return [
+        { src: f.sprite_url, label: f.display_name, cosmeticForm: f, crop },
+        ...(f.shiny_sprite_url ? [{ src: f.shiny_sprite_url, label: `Shiny ${f.display_name}`, cosmeticForm: f, crop }] : []),
+      ];
+    }),
   ];
 }
 
 function SpriteBlock({
   src,
   label,
+  crop,
   selected,
   onClick,
 }: {
   src: string;
   label: string;
+  crop: SpriteCrop;
   selected: boolean;
   onClick: () => void;
 }) {
@@ -811,7 +837,14 @@ function SpriteBlock({
             : "border-border group-hover:border-primary/50",
         )}
       >
-        <img src={src} alt={label} className="h-28 w-28" />
+        <div className="h-28 w-28 overflow-hidden">
+          <img
+            src={src}
+            alt={label}
+            className="h-28 w-28"
+            style={{ transform: spriteCropTransform(crop) }}
+          />
+        </div>
       </div>
       <span className="text-xs text-muted-foreground">{label}</span>
     </button>
@@ -866,7 +899,14 @@ export function SpriteGalleryDialog({
             </Button>
           )}
           {current && (
-            <img src={current.src} alt={current.label} className="h-48 w-48" />
+            <div className="h-48 w-48 overflow-hidden">
+              <img
+                src={current.src}
+                alt={current.label}
+                className="h-48 w-48"
+                style={{ transform: spriteCropTransform(current.crop) }}
+              />
+            </div>
           )}
           {variants.length > 1 && (
             <Button

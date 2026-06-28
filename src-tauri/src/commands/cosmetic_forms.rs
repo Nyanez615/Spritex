@@ -12,6 +12,10 @@ fn row_to_cosmetic_form(row: &Row) -> rusqlite::Result<CosmeticForm> {
         display_name: row.get("display_name")?,
         sprite_url: row.get("sprite_url")?,
         shiny_sprite_url: row.get("shiny_sprite_url")?,
+        sprite_crop_x: row.get("sprite_crop_x")?,
+        sprite_crop_y: row.get("sprite_crop_y")?,
+        sprite_crop_width: row.get("sprite_crop_width")?,
+        sprite_crop_height: row.get("sprite_crop_height")?,
         mega_stone_item: row.get("mega_stone_item")?,
         types: row.get("types")?,
         height: row.get("height")?,
@@ -34,7 +38,7 @@ fn row_to_cosmetic_form(row: &Row) -> rusqlite::Result<CosmeticForm> {
     })
 }
 
-/// Mega/Gigantamax sprite variants + (mega only) the required held item, for the sprite gallery on the detail page.
+/// Every sprite-bearing alternate appearance for the sprite gallery on the detail page — Mega/Gigantamax/battle-only forms with their own real stat block (held item only for Mega) AND purely decorative sprite variants with no mechanical difference at all (Unown's letters, Arceus's types, ...). See CosmeticForm's own doc comment for the full scope.
 #[tauri::command]
 pub fn get_cosmetic_forms(
     state: State<'_, AppState>,
@@ -69,9 +73,9 @@ mod tests {
             TestPokemonRow { id: 6, ..Default::default() },
         ]);
         seed_cosmetic_forms(&conn, &[
-            TestCosmeticFormRow { pokemon_id: 3, form_id: 0, kind: "mega".into(), display_name: "Mega Venusaur".into(), mega_stone_item: Some("venusaurite".into()) },
-            TestCosmeticFormRow { pokemon_id: 3, form_id: 0, kind: "gmax".into(), display_name: "Gigantamax Venusaur".into(), mega_stone_item: None },
-            TestCosmeticFormRow { pokemon_id: 6, form_id: 0, kind: "mega_x".into(), display_name: "Mega Charizard X".into(), mega_stone_item: Some("charizardite-x".into()) },
+            TestCosmeticFormRow { pokemon_id: 3, form_id: 0, kind: "mega".into(), display_name: "Mega Venusaur".into(), mega_stone_item: Some("venusaurite".into()), ..Default::default() },
+            TestCosmeticFormRow { pokemon_id: 3, form_id: 0, kind: "gmax".into(), display_name: "Gigantamax Venusaur".into(), mega_stone_item: None, ..Default::default() },
+            TestCosmeticFormRow { pokemon_id: 6, form_id: 0, kind: "mega_x".into(), display_name: "Mega Charizard X".into(), mega_stone_item: Some("charizardite-x".into()), ..Default::default() },
         ]);
 
         let venusaur_forms = get_cosmetic_forms_impl(&conn, 3, 0).unwrap();
@@ -89,5 +93,38 @@ mod tests {
         let conn = seed_static_db(&[TestPokemonRow { id: 1, ..Default::default() }]);
         let forms = get_cosmetic_forms_impl(&conn, 1, 0).unwrap();
         assert!(forms.is_empty());
+    }
+
+    #[test]
+    fn get_cosmetic_forms_round_trips_sprite_crop_fields() {
+        let conn = seed_static_db(&[TestPokemonRow { id: 201, ..Default::default() }]);
+        seed_cosmetic_forms(&conn, &[
+            TestCosmeticFormRow {
+                pokemon_id: 201, form_id: 0, kind: "b".into(), display_name: "Unown B".into(),
+                sprite_crop_x: 0.385, sprite_crop_y: 0.333, sprite_crop_width: 0.229, sprite_crop_height: 0.333,
+                ..Default::default()
+            },
+        ]);
+
+        let forms = get_cosmetic_forms_impl(&conn, 201, 0).unwrap();
+        assert_eq!(forms.len(), 1);
+        assert_eq!(forms[0].sprite_crop_x, 0.385);
+        assert_eq!(forms[0].sprite_crop_y, 0.333);
+        assert_eq!(forms[0].sprite_crop_width, 0.229);
+        assert_eq!(forms[0].sprite_crop_height, 0.333);
+    }
+
+    #[test]
+    fn get_cosmetic_forms_defaults_sprite_crop_to_the_full_canvas_when_unset() {
+        let conn = seed_static_db(&[TestPokemonRow { id: 6, ..Default::default() }]);
+        seed_cosmetic_forms(&conn, &[
+            TestCosmeticFormRow { pokemon_id: 6, form_id: 0, kind: "mega_x".into(), display_name: "Mega Charizard X".into(), ..Default::default() },
+        ]);
+
+        let forms = get_cosmetic_forms_impl(&conn, 6, 0).unwrap();
+        assert_eq!(forms[0].sprite_crop_x, 0.0);
+        assert_eq!(forms[0].sprite_crop_y, 0.0);
+        assert_eq!(forms[0].sprite_crop_width, 1.0);
+        assert_eq!(forms[0].sprite_crop_height, 1.0);
     }
 }

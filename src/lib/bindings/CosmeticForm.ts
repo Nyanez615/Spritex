@@ -19,6 +19,19 @@
  */
 export type CosmeticForm = { id: number, pokemon_id: number, form_id: number, kind: string, display_name: string, sprite_url: string, shiny_sprite_url: string, 
 /**
+ * sprite_url's own non-transparent content region, as fractions (0..1) of
+ * its canvas — PokéAPI `pokemon-form`-sourced sprites (every decorative-
+ * only cosmetic form: Unown's letters, Arceus's types, ...) only expose a
+ * small, heavily-padded basic battle sprite with no official-artwork/home
+ * variant, and how much padding varies wildly by species (confirmed live:
+ * Unown ~23%x33% filled, Arceus ~71%x76% filled) — too inconsistent for a
+ * single uniform CSS zoom to safely correct without clipping some
+ * sprites. The frontend uses this to zoom each sprite in by its own real
+ * amount. Also applies to shiny_sprite_url — a shiny sprite is a pure
+ * palette recolor sharing the same alpha shape, confirmed live.
+ */
+sprite_crop_x: number, sprite_crop_y: number, sprite_crop_width: number, sprite_crop_height: number, 
+/**
  * PokéAPI item slug, e.g. "venusaurite" — None for Gigantamax (no held item).
  */
 mega_stone_item: string | null, 

@@ -16,6 +16,20 @@ CREATE TABLE cosmetic_forms (
     display_name              TEXT    NOT NULL,
     sprite_url                TEXT    NOT NULL,
     shiny_sprite_url          TEXT    NOT NULL,
+    -- The sprite's own non-transparent content region, as fractions (0..1)
+    -- of its canvas — needed because PokéAPI `pokemon-form`-sourced sprites
+    -- (every decorative-only cosmetic form: Unown's letters, Arceus's
+    -- types, ...) only expose a small, heavily-padded basic battle sprite
+    -- with no official-artwork/home variant, and how much padding varies
+    -- wildly by species (confirmed live: Unown ~23%x33% filled, Arceus
+    -- ~71%x76% filled) — too inconsistent for a single uniform CSS zoom to
+    -- safely correct without clipping some sprites. Computed once from
+    -- sprite_url and reused for shiny_sprite_url too (a shiny sprite is a
+    -- pure palette recolor sharing the same alpha shape, confirmed live).
+    sprite_crop_x             REAL    NOT NULL DEFAULT 0,
+    sprite_crop_y             REAL    NOT NULL DEFAULT 0,
+    sprite_crop_width         REAL    NOT NULL DEFAULT 1,
+    sprite_crop_height        REAL    NOT NULL DEFAULT 1,
     mega_stone_item           TEXT,
     types                     TEXT    NOT NULL,
     height                    INTEGER NOT NULL,

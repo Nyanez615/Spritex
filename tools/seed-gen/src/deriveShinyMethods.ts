@@ -79,6 +79,14 @@ export interface PokemonRow {
   shiny_sprite_url: string;
   sprite_url_female: string | null;
   shiny_sprite_url_female: string | null;
+  sprite_crop_x: number;
+  sprite_crop_y: number;
+  sprite_crop_width: number;
+  sprite_crop_height: number;
+  sprite_crop_x_female: number;
+  sprite_crop_y_female: number;
+  sprite_crop_width_female: number;
+  sprite_crop_height_female: number;
   types: string;
   gender_rate: number;
   has_gender_differences: boolean;
@@ -122,6 +130,10 @@ export interface CosmeticFormRow {
   display_name: string;
   sprite_url: string;
   shiny_sprite_url: string;
+  sprite_crop_x: number;
+  sprite_crop_y: number;
+  sprite_crop_width: number;
+  sprite_crop_height: number;
   mega_stone_item: string | null;
   types: string;
   height: number;
@@ -393,6 +405,14 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
         shiny_sprite_url: variety.shinySpriteUrl,
         sprite_url_female: variety.spriteUrlFemale,
         shiny_sprite_url_female: variety.shinySpriteUrlFemale,
+        sprite_crop_x: variety.spriteCropX,
+        sprite_crop_y: variety.spriteCropY,
+        sprite_crop_width: variety.spriteCropWidth,
+        sprite_crop_height: variety.spriteCropHeight,
+        sprite_crop_x_female: variety.spriteCropXFemale,
+        sprite_crop_y_female: variety.spriteCropYFemale,
+        sprite_crop_width_female: variety.spriteCropWidthFemale,
+        sprite_crop_height_female: variety.spriteCropHeightFemale,
         types: JSON.stringify(variety.types),
         // variety.genderRate is only ever set for Partner Pikachu/Eevee (see
         // PARTNER_FORM_OVERRIDES) — every other variety falls back to the
@@ -519,6 +539,10 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
     display_name: f.displayName,
     sprite_url: f.spriteUrl,
     shiny_sprite_url: f.shinySpriteUrl,
+    sprite_crop_x: f.spriteCropX,
+    sprite_crop_y: f.spriteCropY,
+    sprite_crop_width: f.spriteCropWidth,
+    sprite_crop_height: f.spriteCropHeight,
     mega_stone_item: f.megaStoneItem,
     types: JSON.stringify(f.types),
     height: f.height,

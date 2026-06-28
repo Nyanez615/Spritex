@@ -32,7 +32,10 @@ function insertPokemon(db: DatabaseSync, rows: PokemonRow[]): void {
   const stmt = db.prepare(`
     INSERT INTO pokemon (
       id, name, display_name, form_id, form_name, generation, sprite_url, shiny_sprite_url,
-      sprite_url_female, shiny_sprite_url_female, types, gender_rate, is_mythical, is_legendary,
+      sprite_url_female, shiny_sprite_url_female,
+      sprite_crop_x, sprite_crop_y, sprite_crop_width, sprite_crop_height,
+      sprite_crop_x_female, sprite_crop_y_female, sprite_crop_width_female, sprite_crop_height_female,
+      types, gender_rate, is_mythical, is_legendary,
       is_baby, is_final_evolution, color, shape, growth_rate, egg_groups, capture_rate,
       base_happiness, height, weight, abilities, stat_hp, stat_attack, stat_defense,
       stat_special_attack, stat_special_defense, stat_speed, stat_total, base_experience,
@@ -40,12 +43,14 @@ function insertPokemon(db: DatabaseSync, rows: PokemonRow[]): void {
       ev_yield_special_defense, ev_yield_speed, has_mega_evolution, has_gigantamax,
       has_gender_differences, hatch_steps, flavor_text
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const r of rows) {
     stmt.run(
       r.id, r.name, r.display_name, r.form_id, r.form_name, r.generation,
       r.sprite_url, r.shiny_sprite_url, r.sprite_url_female, r.shiny_sprite_url_female,
+      r.sprite_crop_x, r.sprite_crop_y, r.sprite_crop_width, r.sprite_crop_height,
+      r.sprite_crop_x_female, r.sprite_crop_y_female, r.sprite_crop_width_female, r.sprite_crop_height_female,
       r.types, r.gender_rate, b(r.is_mythical), b(r.is_legendary), b(r.is_baby), b(r.is_final_evolution),
       r.color, r.shape, r.growth_rate, r.egg_groups, r.capture_rate, r.base_happiness,
       r.height, r.weight, r.abilities, r.stat_hp, r.stat_attack, r.stat_defense,
@@ -73,16 +78,18 @@ function insertShinyMethods(db: DatabaseSync, rows: ShinyMethodRow[]): void {
 function insertCosmeticForms(db: DatabaseSync, rows: CosmeticFormRow[]): void {
   const stmt = db.prepare(`
     INSERT INTO cosmetic_forms (
-      pokemon_id, form_id, kind, display_name, sprite_url, shiny_sprite_url, mega_stone_item,
+      pokemon_id, form_id, kind, display_name, sprite_url, shiny_sprite_url,
+      sprite_crop_x, sprite_crop_y, sprite_crop_width, sprite_crop_height, mega_stone_item,
       types, height, weight, abilities, stat_hp, stat_attack, stat_defense, stat_special_attack,
       stat_special_defense, stat_speed, stat_total, base_experience, ev_yield_hp, ev_yield_attack,
       ev_yield_defense, ev_yield_special_attack, ev_yield_special_defense, ev_yield_speed
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const r of rows) {
     stmt.run(
-      r.pokemon_id, r.form_id, r.kind, r.display_name, r.sprite_url, r.shiny_sprite_url, r.mega_stone_item,
+      r.pokemon_id, r.form_id, r.kind, r.display_name, r.sprite_url, r.shiny_sprite_url,
+      r.sprite_crop_x, r.sprite_crop_y, r.sprite_crop_width, r.sprite_crop_height, r.mega_stone_item,
       r.types, r.height, r.weight, r.abilities, r.stat_hp, r.stat_attack, r.stat_defense, r.stat_special_attack,
       r.stat_special_defense, r.stat_speed, r.stat_total, r.base_experience, r.ev_yield_hp, r.ev_yield_attack,
       r.ev_yield_defense, r.ev_yield_special_attack, r.ev_yield_special_defense, r.ev_yield_speed

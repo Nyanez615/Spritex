@@ -178,27 +178,49 @@ pub fn seed_shiny_methods(conn: &Connection, rows: &[TestShinyMethodRow]) {
     }
 }
 
-#[derive(Default)]
 pub struct TestCosmeticFormRow {
     pub pokemon_id: i32,
     pub form_id: i32,
     pub kind: String,
     pub display_name: String,
     pub mega_stone_item: Option<String>,
+    pub sprite_crop_x: f64,
+    pub sprite_crop_y: f64,
+    pub sprite_crop_width: f64,
+    pub sprite_crop_height: f64,
+}
+
+impl Default for TestCosmeticFormRow {
+    fn default() -> Self {
+        Self {
+            pokemon_id: 0,
+            form_id: 0,
+            kind: String::new(),
+            display_name: String::new(),
+            mega_stone_item: None,
+            sprite_crop_x: 0.0,
+            sprite_crop_y: 0.0,
+            sprite_crop_width: 1.0,
+            sprite_crop_height: 1.0,
+        }
+    }
 }
 
 pub fn seed_cosmetic_forms(conn: &Connection, rows: &[TestCosmeticFormRow]) {
     for row in rows {
         conn.execute(
             "INSERT INTO cosmetic_forms (
-                pokemon_id, form_id, kind, display_name, sprite_url, shiny_sprite_url, mega_stone_item,
+                pokemon_id, form_id, kind, display_name, sprite_url, shiny_sprite_url,
+                sprite_crop_x, sprite_crop_y, sprite_crop_width, sprite_crop_height, mega_stone_item,
                 types, height, weight, abilities,
                 stat_hp, stat_attack, stat_defense, stat_special_attack, stat_special_defense, stat_speed, stat_total,
                 base_experience, ev_yield_hp, ev_yield_attack, ev_yield_defense,
                 ev_yield_special_attack, ev_yield_special_defense, ev_yield_speed
-            ) VALUES (?1, ?2, ?3, ?4, '', '', ?5, '[]', 0, 0, '[]', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)",
+            ) VALUES (?1, ?2, ?3, ?4, '', '', ?5, ?6, ?7, ?8, ?9, '[]', 0, 0, '[]', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)",
             rusqlite::params![
-                row.pokemon_id, row.form_id, row.kind, row.display_name, row.mega_stone_item,
+                row.pokemon_id, row.form_id, row.kind, row.display_name,
+                row.sprite_crop_x, row.sprite_crop_y, row.sprite_crop_width, row.sprite_crop_height,
+                row.mega_stone_item,
             ],
         )
         .expect("insert test cosmetic_forms row");
