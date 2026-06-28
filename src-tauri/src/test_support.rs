@@ -252,13 +252,14 @@ pub struct TestEvolutionEdgeRow {
     pub from_form_id: i32,
     pub to_pokemon_id: i32,
     pub to_form_id: i32,
+    pub from_cosmetic_kind: Option<String>,
 }
 
 pub fn seed_evolution_edges(conn: &Connection, rows: &[TestEvolutionEdgeRow]) {
     for row in rows {
         conn.execute(
-            "INSERT INTO evolution_edges (chain_id, from_pokemon_id, from_form_id, to_pokemon_id, to_form_id) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![row.chain_id, row.from_pokemon_id, row.from_form_id, row.to_pokemon_id, row.to_form_id],
+            "INSERT INTO evolution_edges (chain_id, from_pokemon_id, from_form_id, to_pokemon_id, to_form_id, from_cosmetic_kind) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![row.chain_id, row.from_pokemon_id, row.from_form_id, row.to_pokemon_id, row.to_form_id, row.from_cosmetic_kind],
         )
         .expect("insert test evolution_edges row");
     }

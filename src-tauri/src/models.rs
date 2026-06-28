@@ -354,6 +354,13 @@ pub struct EvolutionChainEdge {
     pub from_form_id: i32,
     pub to_pokemon_id: i32,
     pub to_form_id: i32,
+    /// The specific cosmetic_forms `kind` the FROM individual must currently
+    /// be displaying for this edge to be this precise — None (true for the
+    /// overwhelming majority of edges) means no specific cosmetic form is
+    /// required. Burmy (#412) is the only confirmed case (its cloak
+    /// deterministically locks in which Wormadam cloak results) — purely a
+    /// frontend labeling hint, never gates which edges are real.
+    pub from_cosmetic_kind: Option<String>,
 }
 
 /// Everything the evolution-line chip row needs for one chain: every member

@@ -257,23 +257,53 @@ export function buildEvolutionLanes(
   return lanes;
 }
 
+/**
+ * The specific cosmetic_forms `kind` the edge from (fromPokemonId,
+ * fromFormId) to (toPokemonId, toFormId) requires the from-member to
+ * currently be displaying — null when no such edge exists, or when it
+ * exists but has no cosmetic-kind requirement (the overwhelming majority).
+ * A pure lookup, extracted for direct testing rather than left inline in
+ * EvolutionLineNav's render loop, matching this file's own established
+ * pattern (buildEvolutionLanes, applyCosmeticForm, shouldSkipPageKeyNav).
+ */
+export function fromCosmeticKindFor(
+  fromPokemonId: number,
+  fromFormId: number,
+  toPokemonId: number,
+  toFormId: number,
+  edges: EvolutionChainEdge[],
+): string | null {
+  const edge = edges.find(
+    (e) =>
+      e.from_pokemon_id === fromPokemonId &&
+      e.from_form_id === fromFormId &&
+      e.to_pokemon_id === toPokemonId &&
+      e.to_form_id === toFormId,
+  );
+  return edge?.from_cosmetic_kind ?? null;
+}
+
 function EvolutionChip({
   pokemon,
   isCurrent,
   searchContext,
+  cosmeticKindLabel,
 }: {
   pokemon: Pokemon;
   isCurrent: boolean;
   searchContext: Required<PokedexSearch>;
+  /** A specific cosmetic form (e.g. "Sandy") this lane's step requires this member to currently be displaying — see EvolutionChainEdge.from_cosmetic_kind's own doc comment. Appended to the label so e.g. Burmy reads "Burmy (Sandy)" in the lane leading to Sandy Wormadam specifically, instead of looking identical across all 4 of Burmy's lanes. */
+  cosmeticKindLabel?: string;
 }) {
+  const label = cosmeticKindLabel ? `${pokemon.display_name} (${cosmeticKindLabel})` : pokemon.display_name;
   if (isCurrent) {
     return (
       <Badge
         variant="outline"
         className="flex items-center gap-1.5 px-2 py-1 text-sm font-normal"
       >
-        <img src={pokemon.sprite_url} alt={pokemon.display_name} className="size-6" />
-        {pokemon.display_name}
+        <img src={pokemon.sprite_url} alt={label} className="size-6" />
+        {label}
       </Badge>
     );
   }
@@ -285,8 +315,8 @@ function EvolutionChip({
         search={{ ...searchContext, form: pokemon.form_id }}
         className="flex items-center gap-1.5"
       >
-        <img src={pokemon.sprite_url} alt={pokemon.display_name} className="size-6" />
-        {pokemon.display_name}
+        <img src={pokemon.sprite_url} alt={label} className="size-6" />
+        {label}
       </Link>
     </Button>
   );
@@ -340,6 +370,15 @@ export function EvolutionLineNav({
             // isn't unique here the way it is for the per-lane container key
             // above.
             const key = `${laneIndex}-${evolutionMemberKey(member.pokemon.id, member.pokemon.form_id)}`;
+            // The cosmetic-kind qualifier (if any) lives on the EDGE leading
+            // OUT of this member within this specific lane — e.g. Burmy's
+            // chip in the lane ending at Sandy Wormadam reads "Burmy
+            // (Sandy)", while the same Burmy node in the Mothim lane stays
+            // plain "Burmy" (that edge has no cosmetic-kind requirement).
+            const nextMember = lane[memberIndex + 1];
+            const fromCosmeticKind = nextMember
+              ? fromCosmeticKindFor(member.pokemon.id, member.pokemon.form_id, nextMember.pokemon.id, nextMember.pokemon.form_id, edges)
+              : null;
             return (
               <Fragment key={key}>
                 {memberIndex > 0 && (
@@ -358,6 +397,7 @@ export function EvolutionLineNav({
                       member.pokemon.form_id === current.form_id
                     }
                     searchContext={searchContext}
+                    cosmeticKindLabel={fromCosmeticKind ? humanize(fromCosmeticKind) : undefined}
                   />
                 </div>
               </Fragment>

@@ -109,11 +109,11 @@ function insertEvolutionChains(db: DatabaseSync, rows: EvolutionChainRow[]): voi
 
 function insertEvolutionEdges(db: DatabaseSync, rows: EvolutionEdgeRow[]): void {
   const stmt = db.prepare(`
-    INSERT INTO evolution_edges (chain_id, from_pokemon_id, from_form_id, to_pokemon_id, to_form_id)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO evolution_edges (chain_id, from_pokemon_id, from_form_id, to_pokemon_id, to_form_id, from_cosmetic_kind)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
   for (const r of rows) {
-    stmt.run(r.chain_id, r.from_pokemon_id, r.from_form_id, r.to_pokemon_id, r.to_form_id);
+    stmt.run(r.chain_id, r.from_pokemon_id, r.from_form_id, r.to_pokemon_id, r.to_form_id, r.from_cosmetic_kind);
   }
 }
 

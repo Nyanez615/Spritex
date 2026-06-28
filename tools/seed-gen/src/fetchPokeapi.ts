@@ -57,17 +57,84 @@ const REGIONS = [
 const REGIONAL_ADJECTIVES = REGIONS.map((r) => r.adjective);
 
 /**
- * Resolves a battle-only cosmetic form's baseFormId when the form itself is
- * layered on top of a regional form, not the base species (confirmed real:
- * Galarian Darmanitan's own Zen Mode form_name is "galar-zen" — checked
- * exhaustively against every cached is_battle_only form, the only such case
- * in this dataset, but resolved generally rather than hardcoded to Darmanitan
- * specifically, since nothing rules out a future generation adding another).
+ * Mega/Gmax forms confirmed, per-species via Bulbapedia (and in Floette's
+ * case also via a stat-boost comparison: Mega Floette's HP/stats match a
+ * boost over Eternal Floette's own base stats, not regular Floette's), to
+ * attach to a SPECIFIC non-default tracked variety rather than the default
+ * — found via an exhaustive re-check of every Mega/Gmax-bearing species
+ * with more than one tracked variety, triggered by discovering Mega Floette
+ * (a real, current Pokémon Legends: Z-A "Mega Dimension" DLC form,
+ * confirmed live; PokéAPI's own `floette` species data was stale in this
+ * pipeline's disk cache until refreshed) wrongly attached to regular
+ * Floette ("Regular Floette cannot Mega Evolve" — Bulbapedia, explicit).
+ * Most of this same Z-A wave's other new Mega forms (Raichu, Greninja) and
+ * pre-existing Gmax forms (Toxtricity, Urshifu, Meowstic) self-disambiguate
+ * via the generic name-substring match below (their own PokéAPI resource
+ * name embeds the target variety's form name, e.g.
+ * "toxtricity-low-key-gmax") — these two don't, since neither
+ * "floette-mega" nor "zygarde-mega"/"zygarde-complete" embeds any hint of
+ * which variety they attach to, so they need an explicit, cited override
+ * the same way EVOLUTION_BASE_FORM_OVERRIDES/PARTNER_FORM_OVERRIDES already
+ * do for other PokéAPI-structurally-inexpressible facts. Zygarde's Complete
+ * Forme (itself only a cosmetic_forms entry, not a tracked variety — it has
+ * no stat block of its own) is reachable only from 50% Forme while holding
+ * Power Construct ("If its Ability is Power Construct and its HP drops
+ * below half, then Zygarde [transforms into Complete Forme]" — Bulbapedia),
+ * and Mega Zygarde requires Complete Forme specifically ("Zygarde,
+ * exclusively in its Complete Forme, can Mega Evolve") — both correctly
+ * attach to the one base variety (zygarde-50-power-construct) that can
+ * actually reach them, not the default (Aura Break) 50% Forme. Two more
+ * cases were caught only by re-checking every OTHER battle-only cosmetic
+ * kind too, not just Mega/Gmax, once Greninja's own Mega attachment turned
+ * out correct but its pre-existing "ash" (Ash-Greninja) cosmetic form did
+ * not: "a Greninja with the Ability Battle Bond will transform into
+ * Ash-Greninja" (Bulbapedia) — Battle Bond is itself a real, separately-
+ * tracked variety (greninja-battle-bond), so Ash-Greninja attaches there,
+ * not to the default Torrent/Protean Greninja. Likewise Terapagos: "it
+ * changes from its Normal Form into its Terastal Form... and transforms
+ * into its Stellar Form upon Terastallizing" (Bulbapedia) — by the time
+ * Stellar Form is reachable, Terapagos has already automatically become
+ * Terastal Form, so Stellar attaches there, not to the default Normal Form.
  */
-function resolveCosmeticBaseFormId(kind: string, varieties: FetchedVariety[]): number {
+const COSMETIC_BASE_FORM_OVERRIDES: Record<string, string> = {
+  "floette-mega": "floette-eternal",
+  "zygarde-complete": "zygarde-50-power-construct",
+  "zygarde-mega": "zygarde-50-power-construct",
+  "greninja-ash": "greninja-battle-bond",
+  "terapagos-stellar": "terapagos-terastal",
+};
+
+/**
+ * Resolves a battle-only cosmetic form's baseFormId — usually 0 (the
+ * default variety), but not always. Three independent signals, checked in
+ * order of specificity:
+ * 1. The form's own `kind` embeds a regional adjective's slug (Galarian
+ *    Darmanitan's own Zen Mode form_name is "galar-zen" — checked
+ *    exhaustively against every cached is_battle_only form, the only such
+ *    case in this dataset, but resolved generally rather than hardcoded).
+ * 2. COSMETIC_BASE_FORM_OVERRIDES, for the confirmed cases with no
+ *    derivable name hint at all (see its own comment above).
+ * 3. A generic check: does the cosmetic form's own PokéAPI resource name
+ *    embed a non-default tracked variety's form name (e.g.
+ *    "toxtricity-low-key-gmax" embeds "low-key", "urshifu-rapid-strike-gmax"
+ *    embeds "rapid-strike", "meowstic-female-mega" embeds "female")? Found
+ *    by re-checking every Mega/Gmax-bearing species with more than one
+ *    tracked variety against Bulbapedia directly — Toxtricity's Gigantamax
+ *    Low Key and Urshifu's Gigantamax Rapid Strike were ALSO confirmed
+ *    wrongly attached to their species' default variety (Amped/Single
+ *    Strike) before this fix, not just the newly-discovered Floette case.
+ */
+function resolveCosmeticBaseFormId(apiPokemonName: string, kind: string, varieties: FetchedVariety[]): number {
   const region = REGIONS.find((r) => kind === r.slug || kind.startsWith(`${r.slug}-`));
-  if (!region) return 0;
-  return varieties.find((v) => v.formName === region.adjective)?.formId ?? 0;
+  if (region) {
+    return varieties.find((v) => v.formName === region.adjective)?.formId ?? 0;
+  }
+  const overrideTarget = COSMETIC_BASE_FORM_OVERRIDES[apiPokemonName];
+  if (overrideTarget) {
+    return varieties.find((v) => v.apiPokemonName === overrideTarget)?.formId ?? 0;
+  }
+  const nameMatch = varieties.find((v) => v.formName && apiPokemonName.includes(v.formName.toLowerCase().replace(/\s+/g, "-")));
+  return nameMatch?.formId ?? 0;
 }
 
 /**
@@ -411,13 +478,20 @@ export type CosmeticFormKind = string;
 export interface FetchedCosmeticForm {
   pokemonId: number;
   /**
-   * Which varieties[].formId this attaches to — 0 for Mega/Gmax (confirmed:
-   * no released game pairs those with a regional form) but NOT always 0 in
-   * general — e.g. Galarian Darmanitan's own Zen Mode ("galar-zen") attaches
-   * to formId 1 (Galarian), not formId 0 (Kantonian). Resolved by
-   * resolveCosmeticBaseFormId, not hardcoded.
+   * Which varieties[].formId this attaches to — usually 0 (the default
+   * variety), but genuinely NOT always: e.g. Galarian Darmanitan's own Zen
+   * Mode ("galar-zen") attaches to formId 1 (Galarian), not formId 0
+   * (Kantonian); Mega Floette attaches to Eternal Floette (confirmed:
+   * "Regular Floette cannot Mega Evolve" — Bulbapedia), not regular Floette;
+   * Gigantamax Low Key Toxtricity attaches to Low Key Toxtricity, not Amped.
+   * Resolved by resolveCosmeticBaseFormId, not hardcoded — see its own doc
+   * comment for the full reasoning (a real, repeatedly-confirmed bug class,
+   * not a one-off: exhaustively re-checked every Mega/Gmax-bearing species
+   * with more than one tracked variety against Bulbapedia directly).
    */
   baseFormId: number;
+  /** Raw PokéAPI pokemon-resource name this cosmetic form was fetched from (e.g. "toxtricity-low-key-gmax") — lets resolveCosmeticBaseFormId disambiguate which tracked variety it attaches to. */
+  apiPokemonName: string;
   kind: CosmeticFormKind;
   displayName: string;
   spriteUrl: string;
@@ -648,7 +722,7 @@ async function extraSpriteForms(
   limiter: ConcurrencyLimiter,
   pokemon: PokeApiPokemon,
   ownFormId: number,
-  shared: Omit<FetchedCosmeticForm, "pokemonId" | "baseFormId" | "kind" | "displayName" | "spriteUrl" | "shinySpriteUrl" | "spriteCropX" | "spriteCropY" | "spriteCropWidth" | "spriteCropHeight" | "megaStoneItem">,
+  shared: Omit<FetchedCosmeticForm, "pokemonId" | "baseFormId" | "apiPokemonName" | "kind" | "displayName" | "spriteUrl" | "shinySpriteUrl" | "spriteCropX" | "spriteCropY" | "spriteCropWidth" | "spriteCropHeight" | "megaStoneItem">,
 ): Promise<FetchedCosmeticForm[]> {
   if (pokemon.forms.length <= 1) return [];
   const extras: FetchedCosmeticForm[] = [];
@@ -668,6 +742,7 @@ async function extraSpriteForms(
       ...shared,
       pokemonId: 0, // filled in by the caller, which knows the species id
       baseFormId: ownFormId,
+      apiPokemonName: formRef.name,
       kind: form.form_name,
       displayName: englishName(form.names, pokemon.name),
       spriteUrl,
@@ -765,6 +840,7 @@ async function fetchVarietyDetail(
         cosmeticForm: {
           pokemonId: 0, // filled in by the caller, which knows the species id
           baseFormId: 0, // placeholder — the caller re-resolves this via resolveCosmeticBaseFormId once the species' full varieties list is known
+          apiPokemonName: pokemon.name,
           kind,
           displayName: englishName(form.names, pokemon.name),
           spriteUrl: shared.spriteUrl,
@@ -910,7 +986,7 @@ export async function fetchAllSpecies(): Promise<{ species: FetchedSpecies[]; co
         cosmeticForms.push({
           ...cosmeticForm,
           pokemonId: species.id,
-          baseFormId: resolveCosmeticBaseFormId(cosmeticForm.kind, varieties),
+          baseFormId: resolveCosmeticBaseFormId(cosmeticForm.apiPokemonName, cosmeticForm.kind, varieties),
         });
       }
       // extraCosmeticForms already know their own correct baseFormId (the

@@ -59,6 +59,24 @@ export interface EvolutionEdge {
   fromFormId: number;
   toPokemonId: number;
   toFormId: number;
+  /**
+   * The specific cosmetic_forms `kind` the FROM individual must currently be
+   * displaying for this edge to be this precise — null means "no specific
+   * cosmetic form required" (true for the overwhelming majority of edges).
+   * Burmy (#412) is the only confirmed case: its cloak is purely cosmetic
+   * (no stat/type difference — confirmed Bug-type regardless, so it's
+   * correctly NOT a tracked `pokemon` variety the way Wormadam's resulting
+   * cloaks ARE), but Bulbapedia is explicit that the cloak deterministically
+   * locks in which Wormadam cloak results: "When evolving into Wormadam,
+   * its form determines the form of Wormadam it evolves into, which is
+   * permanent" — a real, confirmed fact, unlike e.g. Gloom->Vileplume/
+   * Bellossom's genuine player choice. See EVOLUTION_FROM_COSMETIC_KIND.
+   * Purely a frontend labeling hint (e.g. show "Sandy Burmy" instead of
+   * generic "Burmy" in the lane leading to Sandy Wormadam) — every edge here
+   * is already a real, independently-reachable outcome regardless of this
+   * field, so it never gates/filters anything.
+   */
+  fromCosmeticKind: string | null;
 }
 
 function speciesIdFromUrl(url: string): number {
@@ -125,6 +143,25 @@ function varietiesOf(key: FormKey, speciesById: Map<number, FetchedSpecies>): Fo
 function formNameOf(key: FormKey, speciesById: Map<number, FetchedSpecies>): string | null {
   return speciesById.get(key.pokemonId)?.varieties.find((v) => v.formId === key.formId)?.formName ?? null;
 }
+
+function apiNameOf(key: FormKey, speciesById: Map<number, FetchedSpecies>): string | null {
+  return speciesById.get(key.pokemonId)?.varieties.find((v) => v.formId === key.formId)?.apiPokemonName ?? null;
+}
+
+/**
+ * Maps an evolved variety's apiPokemonName to the specific cosmetic_forms
+ * `kind` its FROM individual must currently be displaying — see
+ * EvolutionEdge.fromCosmeticKind's own doc comment for the full reasoning.
+ * Wormadam's Plant Cloak (the default/bare variety) deliberately has no
+ * entry here — Plant isn't a tracked cosmetic_forms kind at all (it's just
+ * Burmy's bare, undecorated default sprite), so there's nothing to look up;
+ * its edge correctly keeps fromCosmeticKind: null, same as Mothim's (a real
+ * fact too: any Burmy cloak can become Mothim, only gender matters there).
+ */
+const EVOLUTION_FROM_COSMETIC_KIND: Record<string, string> = {
+  "wormadam-sandy": "sandy",
+  "wormadam-trash": "trash",
+};
 
 /**
  * Varieties that share a chain_id (and, for Partner Pikachu/Eevee, an
@@ -225,13 +262,23 @@ function recordEdge(
     for (const from of fromOptions) {
       const fromName = formNameOf(from, speciesById);
       const to = toOptions.find((t) => formNameOf(t, speciesById) === fromName);
-      if (to) edges.push({ chainId, fromPokemonId: from.pokemonId, fromFormId: from.formId, toPokemonId: to.pokemonId, toFormId: to.formId });
+      if (to) {
+        const toApiName = apiNameOf(to, speciesById);
+        edges.push({
+          chainId, fromPokemonId: from.pokemonId, fromFormId: from.formId, toPokemonId: to.pokemonId, toFormId: to.formId,
+          fromCosmeticKind: (toApiName && EVOLUTION_FROM_COSMETIC_KIND[toApiName]) ?? null,
+        });
+      }
     }
     return;
   }
   for (const from of fromOptions) {
     for (const to of toOptions) {
-      edges.push({ chainId, fromPokemonId: from.pokemonId, fromFormId: from.formId, toPokemonId: to.pokemonId, toFormId: to.formId });
+      const toApiName = apiNameOf(to, speciesById);
+      edges.push({
+        chainId, fromPokemonId: from.pokemonId, fromFormId: from.formId, toPokemonId: to.pokemonId, toFormId: to.formId,
+        fromCosmeticKind: (toApiName && EVOLUTION_FROM_COSMETIC_KIND[toApiName]) ?? null,
+      });
     }
   }
 }

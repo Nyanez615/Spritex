@@ -6,6 +6,7 @@ import {
   buildEvolutionLanes,
   buildSpriteVariants,
   CollectionPanel,
+  fromCosmeticKindFor,
   ProfileSection,
   shouldSkipPageKeyNav,
   SpriteGalleryDialog,
@@ -485,8 +486,8 @@ describe("buildEvolutionLanes", () => {
   function member(id: number, formId: number, displayName: string, stage: number): EvolutionChainMember {
     return { pokemon: { ...BULBASAUR, id, form_id: formId, display_name: displayName }, stage };
   }
-  function edge(fromId: number, fromForm: number, toId: number, toForm: number): EvolutionChainEdge {
-    return { from_pokemon_id: fromId, from_form_id: fromForm, to_pokemon_id: toId, to_form_id: toForm };
+  function edge(fromId: number, fromForm: number, toId: number, toForm: number, fromCosmeticKind: string | null = null): EvolutionChainEdge {
+    return { from_pokemon_id: fromId, from_form_id: fromForm, to_pokemon_id: toId, to_form_id: toForm, from_cosmetic_kind: fromCosmeticKind };
   }
   function names(lane: EvolutionChainMember[]): string[] {
     return lane.map((m) => m.pokemon.display_name);
@@ -556,6 +557,26 @@ describe("buildEvolutionLanes", () => {
     const chain = [member(128, 0, "Tauros", 0)];
     const lanes = buildEvolutionLanes(chain, []).map(names);
     expect(lanes).toEqual([["Tauros"]]);
+  });
+
+  describe("fromCosmeticKindFor", () => {
+    it("returns the cosmetic kind for the matching edge — Burmy's real shape: Sandy/Trash Cloak lock in which Wormadam results, but Mothim is reachable from any cloak", () => {
+      const edges = [
+        edge(412, 0, 413, 0), // Burmy -> Wormadam (Plant Cloak, the default — no cosmetic kind at all)
+        edge(412, 0, 413, 1, "sandy"), // Burmy -> Sandy Wormadam
+        edge(412, 0, 413, 2, "trash"), // Burmy -> Trash Wormadam
+        edge(412, 0, 414, 0), // Burmy -> Mothim (gender-determined, no cosmetic kind)
+      ];
+      expect(fromCosmeticKindFor(412, 0, 413, 1, edges)).toBe("sandy");
+      expect(fromCosmeticKindFor(412, 0, 413, 2, edges)).toBe("trash");
+      expect(fromCosmeticKindFor(412, 0, 413, 0, edges)).toBeNull();
+      expect(fromCosmeticKindFor(412, 0, 414, 0, edges)).toBeNull();
+    });
+
+    it("returns null when no edge matches the given (from, to) pair at all", () => {
+      const edges = [edge(412, 0, 413, 1, "sandy")];
+      expect(fromCosmeticKindFor(1, 0, 2, 0, edges)).toBeNull();
+    });
   });
 });
 

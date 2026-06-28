@@ -8,4 +8,13 @@
  * to render each real lineage as its own row instead of one flat,
  * misleadingly linear-looking list.
  */
-export type EvolutionChainEdge = { from_pokemon_id: number, from_form_id: number, to_pokemon_id: number, to_form_id: number, };
+export type EvolutionChainEdge = { from_pokemon_id: number, from_form_id: number, to_pokemon_id: number, to_form_id: number, 
+/**
+ * The specific cosmetic_forms `kind` the FROM individual must currently
+ * be displaying for this edge to be this precise — None (true for the
+ * overwhelming majority of edges) means no specific cosmetic form is
+ * required. Burmy (#412) is the only confirmed case (its cloak
+ * deterministically locks in which Wormadam cloak results) — purely a
+ * frontend labeling hint, never gates which edges are real.
+ */
+from_cosmetic_kind: string | null, };

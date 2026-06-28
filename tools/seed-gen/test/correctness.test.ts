@@ -1205,3 +1205,67 @@ test("pokemon rows with NO gender-difference sprite default sprite_crop_*_female
   assert.equal(genderless.sprite_crop_width_female, 1);
   assert.equal(genderless.sprite_crop_height_female, 1);
 });
+
+test("Mega Floette (#670) attaches to Eternal Floette (form 1), not regular Floette (form 0) — regression test for a real bug: Bulbapedia is explicit (\"Regular Floette cannot Mega Evolve\") that only Eternal Flower Floette can Mega Evolve, a real Legends: Z-A \"Mega Dimension\" DLC addition this pipeline's disk cache was initially stale for (PokéAPI hadn't yet been re-fetched since adding it) — confirmed independently via stats too: Mega Floette's HP (74) matches Eternal Floette's (74), not regular Floette's (54)", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const megaFloette = cosmeticForms.find((f) => f.pokemon_id === 670 && f.kind === "mega")!;
+  assert.equal(megaFloette.form_id, 1);
+});
+
+test("Mega Meowstic (#678) attaches separately to BOTH Male (form 0) and Female (form 1) Meowstic — regression test for a real bug: Bulbapedia confirms \"Mega Meowstic technically has two forms based on the gender of the Pokémon\" (PokéAPI tracks meowstic-male-mega and meowstic-female-mega as two separate varieties), but the pipeline's disk cache was stale and only knew about one undifferentiated \"meowstic-mega\" variety until refreshed, silently dropping the female one entirely", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const megaMeowstics = cosmeticForms.filter((f) => f.pokemon_id === 678 && f.kind === "mega");
+  assert.deepEqual(megaMeowstics.map((f) => f.form_id).sort(), [0, 1]);
+});
+
+test("Complete Zygarde and Mega Zygarde (#718) both attach to 50% Power Construct Zygarde (form 2), not the default Aura Break 50% Forme (form 0) — regression test for a real bug: Bulbapedia confirms Complete Forme is reached only \"if its Ability is Power Construct,\" and Mega Zygarde requires Complete Forme specifically, neither of which the default Aura-Break-ability Zygarde can ever reach", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const complete = cosmeticForms.find((f) => f.pokemon_id === 718 && f.kind === "complete")!;
+  const mega = cosmeticForms.find((f) => f.pokemon_id === 718 && f.kind === "mega")!;
+  assert.equal(complete.form_id, 2);
+  assert.equal(mega.form_id, 2);
+});
+
+test("Gigantamax Low Key Toxtricity (#849) attaches to Low Key Toxtricity (form 1), not Amped (form 0) — regression test for a real, pre-existing (not newly-introduced) bug confirmed via Bulbapedia's own distinct Gigantamax Amped/Low Key sprites — both Gigantamax forms were wrongly attached to the species' default (Amped) variety before this fix", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const amped = cosmeticForms.find((f) => f.pokemon_id === 849 && f.display_name.includes("Amped"))!;
+  const lowKey = cosmeticForms.find((f) => f.pokemon_id === 849 && f.display_name.includes("Low Key"))!;
+  assert.equal(amped.form_id, 0);
+  assert.equal(lowKey.form_id, 1);
+});
+
+test("Gigantamax Rapid Strike Urshifu (#892) attaches to Rapid Strike Urshifu (form 1), not Single Strike (form 0) — same regression class as Toxtricity above, confirmed via Bulbapedia's own distinct Gigantamax Single Strike/Rapid Strike sprites", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const single = cosmeticForms.find((f) => f.pokemon_id === 892 && f.display_name.includes("Single Strike"))!;
+  const rapid = cosmeticForms.find((f) => f.pokemon_id === 892 && f.display_name.includes("Rapid Strike"))!;
+  assert.equal(single.form_id, 0);
+  assert.equal(rapid.form_id, 1);
+});
+
+test("Ash-Greninja (#658) attaches to Battle Bond Greninja (form 1), not the default Torrent/Protean Greninja (form 0) — regression test for a real bug confirmed via Bulbapedia (\"a Greninja with the Ability Battle Bond will transform into Ash-Greninja\") — Mega Greninja, by contrast, correctly stays attached to the default form (confirmed: \"standard Greninja with Battle Bond are considered to be a separate form,\" and only the default-form Mega Evolution Evobox lists Greninjite)", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const ash = cosmeticForms.find((f) => f.pokemon_id === 658 && f.kind === "ash")!;
+  const mega = cosmeticForms.find((f) => f.pokemon_id === 658 && f.kind === "mega")!;
+  assert.equal(ash.form_id, 1);
+  assert.equal(mega.form_id, 0);
+});
+
+test("Stellar Form Terapagos (#1024) attaches to Terastal Form (form 1), not the default Normal Form (form 0) — regression test for a real bug confirmed via Bulbapedia (\"it changes from its Normal Form into its Terastal Form... and transforms into its Stellar Form upon Terastallizing\" — by the time Stellar Form is reachable, Terapagos has already automatically become Terastal Form)", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const stellar = cosmeticForms.find((f) => f.pokemon_id === 1024 && f.kind === "stellar")!;
+  assert.equal(stellar.form_id, 1);
+});
+
+test("Burmy (#412)'s evolution_edges carry from_cosmetic_kind for the Sandy/Trash Wormadam edges, but not for Plant Wormadam or Mothim — addresses a direct user question: \"shouldn't the specific [Burmy] forms evolve to the specific Wormadams?\" Confirmed via Bulbapedia (\"When evolving into Wormadam, its form determines the form of Wormadam it evolves into, which is permanent\") that this IS a real, deterministic fact, unlike e.g. Gloom->Vileplume/Bellossom's genuine player choice — but PokéAPI's own evolution_details has zero base_form/evolved_form signal for this transition at all (only gender), so the cloak-to-cloak mapping needs an explicit, cited override the same way EVOLUTION_BASE_FORM_OVERRIDES already does for Rockruff. Purely a labeling hint for the frontend's evolution-line lanes — every edge here was already correct before this fix, just undifferentiated", async () => {
+  const edges = await readOutJson<EvolutionEdgeRow[]>("evolution-edges.json");
+  const burmyEdges = edges.filter((e) => e.from_pokemon_id === 412);
+  assert.equal(burmyEdges.length, 4, "expected Burmy's 4 real edges: 3 Wormadam cloaks + Mothim");
+  const toSandyWormadam = burmyEdges.find((e) => e.to_pokemon_id === 413 && e.to_form_id === 1)!;
+  const toTrashWormadam = burmyEdges.find((e) => e.to_pokemon_id === 413 && e.to_form_id === 2)!;
+  const toPlantWormadam = burmyEdges.find((e) => e.to_pokemon_id === 413 && e.to_form_id === 0)!;
+  const toMothim = burmyEdges.find((e) => e.to_pokemon_id === 414)!;
+  assert.equal(toSandyWormadam.from_cosmetic_kind, "sandy");
+  assert.equal(toTrashWormadam.from_cosmetic_kind, "trash");
+  assert.equal(toPlantWormadam.from_cosmetic_kind, null, "Plant Cloak isn't a tracked cosmetic_forms kind at all (it's just Burmy's bare default sprite), so there's nothing to require");
+  assert.equal(toMothim.from_cosmetic_kind, null, "any Burmy cloak can become Mothim — only gender matters there");
+});

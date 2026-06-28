@@ -34,7 +34,7 @@ fn get_evolution_chain_impl(conn: &Connection, pokemon_id: i32, form_id: i32) ->
 
     let mut edge_stmt = conn
         .prepare(
-            "SELECT from_pokemon_id, from_form_id, to_pokemon_id, to_form_id FROM evolution_edges \
+            "SELECT from_pokemon_id, from_form_id, to_pokemon_id, to_form_id, from_cosmetic_kind FROM evolution_edges \
              WHERE chain_id = (SELECT chain_id FROM evolution_chains WHERE pokemon_id = ?1 AND form_id = ?2)",
         )
         .map_err(|e| e.to_string())?;
@@ -45,6 +45,7 @@ fn get_evolution_chain_impl(conn: &Connection, pokemon_id: i32, form_id: i32) ->
                 from_form_id: row.get("from_form_id")?,
                 to_pokemon_id: row.get("to_pokemon_id")?,
                 to_form_id: row.get("to_form_id")?,
+                from_cosmetic_kind: row.get("from_cosmetic_kind")?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -158,9 +159,9 @@ mod tests {
             TestEvolutionChainRow { pokemon_id: 2, form_id: 0, chain_id: 1, stage: 1 },
         ]);
         seed_evolution_edges(&conn, &[
-            TestEvolutionEdgeRow { chain_id: 7, from_pokemon_id: 19, from_form_id: 0, to_pokemon_id: 20, to_form_id: 0 },
-            TestEvolutionEdgeRow { chain_id: 7, from_pokemon_id: 19, from_form_id: 1, to_pokemon_id: 20, to_form_id: 1 },
-            TestEvolutionEdgeRow { chain_id: 1, from_pokemon_id: 1, from_form_id: 0, to_pokemon_id: 2, to_form_id: 0 },
+            TestEvolutionEdgeRow { chain_id: 7, from_pokemon_id: 19, from_form_id: 0, to_pokemon_id: 20, to_form_id: 0, ..Default::default() },
+            TestEvolutionEdgeRow { chain_id: 7, from_pokemon_id: 19, from_form_id: 1, to_pokemon_id: 20, to_form_id: 1, ..Default::default() },
+            TestEvolutionEdgeRow { chain_id: 1, from_pokemon_id: 1, from_form_id: 0, to_pokemon_id: 2, to_form_id: 0, ..Default::default() },
         ]);
 
         let result = get_evolution_chain_impl(&conn, 19, 0).unwrap();
@@ -170,5 +171,29 @@ mod tests {
                 && result.edges.iter().any(|e| e.from_form_id == 1 && e.to_form_id == 1),
             "expected Kantonian->Kantonian and Alolan->Alolan, never cross-connected",
         );
+    }
+
+    #[test]
+    fn get_evolution_chain_round_trips_from_cosmetic_kind() {
+        let conn = seed_static_db(&[
+            TestPokemonRow { id: 412, display_name: "Burmy".into(), ..Default::default() },
+            TestPokemonRow { id: 413, display_name: "Sandy Wormadam".into(), ..Default::default() },
+            TestPokemonRow { id: 414, display_name: "Mothim".into(), ..Default::default() },
+        ]);
+        seed_evolution_chains(&conn, &[
+            TestEvolutionChainRow { pokemon_id: 412, form_id: 0, chain_id: 99, stage: 0 },
+            TestEvolutionChainRow { pokemon_id: 413, form_id: 0, chain_id: 99, stage: 1 },
+            TestEvolutionChainRow { pokemon_id: 414, form_id: 0, chain_id: 99, stage: 1 },
+        ]);
+        seed_evolution_edges(&conn, &[
+            TestEvolutionEdgeRow { chain_id: 99, from_pokemon_id: 412, to_pokemon_id: 413, from_cosmetic_kind: Some("sandy".into()), ..Default::default() },
+            TestEvolutionEdgeRow { chain_id: 99, from_pokemon_id: 412, to_pokemon_id: 414, ..Default::default() },
+        ]);
+
+        let result = get_evolution_chain_impl(&conn, 412, 0).unwrap();
+        let to_wormadam = result.edges.iter().find(|e| e.to_pokemon_id == 413).unwrap();
+        let to_mothim = result.edges.iter().find(|e| e.to_pokemon_id == 414).unwrap();
+        assert_eq!(to_wormadam.from_cosmetic_kind, Some("sandy".to_string()));
+        assert_eq!(to_mothim.from_cosmetic_kind, None, "expected no cosmetic-kind requirement for the Mothim edge — any Burmy cloak can become Mothim");
     }
 }

@@ -13,6 +13,18 @@ CREATE TABLE evolution_edges (
     from_form_id   INTEGER NOT NULL DEFAULT 0,
     to_pokemon_id  INTEGER NOT NULL,
     to_form_id     INTEGER NOT NULL DEFAULT 0,
+    -- The specific cosmetic_forms `kind` the FROM individual must currently
+    -- be displaying for this edge to be this precise — NULL (true for the
+    -- overwhelming majority of edges) means no specific cosmetic form is
+    -- required. Burmy (#412) is the only confirmed case: its cloak is
+    -- purely cosmetic (no stat/type difference), but Bulbapedia is explicit
+    -- that the cloak deterministically locks in which Wormadam cloak
+    -- results ("its form determines the form of Wormadam it evolves into,
+    -- which is permanent") — purely a frontend labeling hint (e.g. show
+    -- "Sandy Burmy" instead of generic "Burmy" in the lane leading to Sandy
+    -- Wormadam), since every edge here is already a real, independently
+    -- reachable outcome regardless of this column.
+    from_cosmetic_kind TEXT,
     PRIMARY KEY (from_pokemon_id, from_form_id, to_pokemon_id, to_form_id),
     FOREIGN KEY (from_pokemon_id, from_form_id) REFERENCES pokemon(id, form_id),
     FOREIGN KEY (to_pokemon_id, to_form_id) REFERENCES pokemon(id, form_id)

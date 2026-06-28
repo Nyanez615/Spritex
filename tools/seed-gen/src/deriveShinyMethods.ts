@@ -168,6 +168,7 @@ export interface EvolutionEdgeRow {
   from_form_id: number;
   to_pokemon_id: number;
   to_form_id: number;
+  from_cosmetic_kind: string | null;
 }
 
 export interface ShinyMethodRow {
@@ -579,6 +580,7 @@ export async function runDeriveShinyMethods(): Promise<{ pokemon: PokemonRow[]; 
     from_form_id: e.fromFormId,
     to_pokemon_id: e.toPokemonId,
     to_form_id: e.toFormId,
+    from_cosmetic_kind: e.fromCosmeticKind,
   }));
 
   console.log(`deriveShinyMethods: ${pokemon.length} pokemon rows, ${shinyMethods.length} shiny_methods rows, ${cosmeticForms.length} cosmetic_forms rows, ${evolutionChains.length} evolution_chains rows, ${evolutionEdges.length} evolution_edges rows`);
