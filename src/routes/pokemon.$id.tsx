@@ -307,12 +307,26 @@ export function cosmeticSpriteFor(
   return cosmeticForms.find((f) => f.pokemon_id === pokemonId && f.form_id === formId && f.kind === kind)?.sprite_url;
 }
 
+/** The matching cosmetic form's own measured crop — the sibling lookup to cosmeticSpriteFor above. Without this, a cosmetic-form override's sprite would render through the BASE member's crop fractions, which describe a different image. */
+export function cosmeticCropFor(
+  pokemonId: number,
+  formId: number,
+  kind: string | null,
+  cosmeticForms: CosmeticForm[],
+): SpriteCrop | undefined {
+  if (!kind) return undefined;
+  const form = cosmeticForms.find((f) => f.pokemon_id === pokemonId && f.form_id === formId && f.kind === kind);
+  if (!form) return undefined;
+  return { x: form.sprite_crop_x, y: form.sprite_crop_y, width: form.sprite_crop_width, height: form.sprite_crop_height };
+}
+
 function EvolutionChip({
   pokemon,
   isCurrent,
   searchContext,
   cosmeticKindLabel,
   spriteUrlOverride,
+  cropOverride,
 }: {
   pokemon: Pokemon;
   isCurrent: boolean;
@@ -321,29 +335,47 @@ function EvolutionChip({
   cosmeticKindLabel?: string;
   /** The matching cosmetic form's OWN sprite (e.g. Sandy Burmy's real cloak sprite), when available — so the chip's icon visually matches its label instead of always showing the base member's sprite regardless of which lane it's in. Falls back to pokemon.sprite_url when not available (e.g. viewing the chain from a different member's page, which doesn't have this member's own cosmetic_forms loaded — see the call site's own comment). */
   spriteUrlOverride?: string;
+  /** spriteUrlOverride's own measured crop fractions — falls back to pokemon's own crop when there's no override, same pairing logic as spriteUrlOverride/pokemon.sprite_url above. */
+  cropOverride?: SpriteCrop;
 }) {
   const label = cosmeticKindLabel ? `${pokemon.display_name} (${cosmeticKindLabel})` : pokemon.display_name;
   const spriteUrl = spriteUrlOverride ?? pokemon.sprite_url;
+  const crop: SpriteCrop = cropOverride ?? {
+    x: pokemon.sprite_crop_x,
+    y: pokemon.sprite_crop_y,
+    width: pokemon.sprite_crop_width,
+    height: pokemon.sprite_crop_height,
+  };
+  // Every sprite is rendered at the same on-screen size regardless of how
+  // much transparent padding its own source image happens to have — without
+  // this, a tightly-cropped sprite (Burmy) reads as a much bigger Pokémon
+  // than a heavily-padded one (Wormadam, Mothim) even at an identical <img>
+  // box size. Same mechanism SpriteBlock already uses for the gallery.
+  const icon = (
+    <div className="size-6 overflow-hidden shrink-0">
+      <img src={spriteUrl} alt={label} className="size-6" style={{ transform: spriteCropTransform(crop) }} />
+    </div>
+  );
   if (isCurrent) {
     return (
       <Badge
         variant="outline"
-        className="flex h-auto items-center gap-2 overflow-visible px-2 py-1.5 text-sm font-normal"
+        className="flex h-auto items-center gap-1.5 overflow-visible px-2 py-1 text-sm font-normal"
       >
-        <img src={spriteUrl} alt={label} className="size-12 object-contain" />
+        {icon}
         {label}
       </Badge>
     );
   }
   return (
-    <Button asChild variant="outline" size="sm" className="h-auto gap-2 py-1.5">
+    <Button asChild variant="outline" size="sm" className="h-auto gap-1.5 py-1">
       <Link
         to="/pokemon/$id"
         params={{ id: String(pokemon.id) }}
         search={{ ...searchContext, form: pokemon.form_id }}
-        className="flex items-center gap-2"
+        className="flex items-center gap-1.5"
       >
-        <img src={spriteUrl} alt={label} className="size-12 object-contain" />
+        {icon}
         {label}
       </Link>
     </Button>
@@ -430,6 +462,7 @@ export function EvolutionLineNav({
                     searchContext={searchContext}
                     cosmeticKindLabel={fromCosmeticKind ? humanize(fromCosmeticKind) : undefined}
                     spriteUrlOverride={cosmeticSpriteFor(member.pokemon.id, member.pokemon.form_id, fromCosmeticKind, cosmeticForms)}
+                    cropOverride={cosmeticCropFor(member.pokemon.id, member.pokemon.form_id, fromCosmeticKind, cosmeticForms)}
                   />
                 </div>
               </Fragment>

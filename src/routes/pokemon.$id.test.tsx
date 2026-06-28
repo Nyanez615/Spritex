@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { CollectionEntry, CosmeticForm, EvolutionChainEdge, EvolutionChainMember, Pokemon, ShinyMethod } from "@/lib/tauri";
+import type { SpriteCrop } from "@/lib/format";
 import {
   applyCosmeticForm,
   buildEvolutionLanes,
   buildSpriteVariants,
   CollectionPanel,
+  cosmeticCropFor,
   cosmeticSpriteFor,
   fromCosmeticKindFor,
   ProfileSection,
@@ -580,12 +582,13 @@ describe("buildEvolutionLanes", () => {
     });
   });
 
-  describe("cosmeticSpriteFor", () => {
-    function cosmeticForm(pokemonId: number, formId: number, kind: string, spriteUrl: string): CosmeticForm {
+  describe("cosmeticSpriteFor / cosmeticCropFor", () => {
+    function cosmeticForm(pokemonId: number, formId: number, kind: string, spriteUrl: string, crop?: SpriteCrop): CosmeticForm {
       return {
         id: 1, pokemon_id: pokemonId, form_id: formId, kind, display_name: kind,
         sprite_url: spriteUrl, shiny_sprite_url: "",
-        sprite_crop_x: 0, sprite_crop_y: 0, sprite_crop_width: 1, sprite_crop_height: 1,
+        sprite_crop_x: crop?.x ?? 0, sprite_crop_y: crop?.y ?? 0,
+        sprite_crop_width: crop?.width ?? 1, sprite_crop_height: crop?.height ?? 1,
         mega_stone_item: null, types: "[]", height: 5, weight: 5, abilities: "[]",
         stat_hp: 1, stat_attack: 1, stat_defense: 1, stat_special_attack: 1, stat_special_defense: 1, stat_speed: 1,
         stat_total: 6, base_experience: 0, ev_yield_hp: 0, ev_yield_attack: 0, ev_yield_defense: 0,
@@ -606,6 +609,18 @@ describe("buildEvolutionLanes", () => {
 
     it("returns undefined when cosmeticForms doesn't have a matching entry — e.g. viewing the chain from a different member's own page, which only has THAT member's cosmetic_forms loaded", () => {
       expect(cosmeticSpriteFor(412, 0, "sandy", [])).toBeUndefined();
+    });
+
+    it("cosmeticCropFor returns the matching cosmetic form's own crop, not the full-canvas default — so a padded cloak sprite gets zoomed in like its source image actually needs", () => {
+      const crop: SpriteCrop = { x: 0.1, y: 0.2, width: 0.5, height: 0.4 };
+      const cosmeticForms = [cosmeticForm(412, 0, "sandy", "burmy-sandy.png", crop)];
+      expect(cosmeticCropFor(412, 0, "sandy", cosmeticForms)).toEqual(crop);
+    });
+
+    it("cosmeticCropFor returns undefined when kind is null or there's no matching entry, mirroring cosmeticSpriteFor", () => {
+      const cosmeticForms = [cosmeticForm(412, 0, "sandy", "burmy-sandy.png", { x: 0.1, y: 0.2, width: 0.5, height: 0.4 })];
+      expect(cosmeticCropFor(412, 0, null, cosmeticForms)).toBeUndefined();
+      expect(cosmeticCropFor(412, 0, "trash", cosmeticForms)).toBeUndefined();
     });
   });
 });
