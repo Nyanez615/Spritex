@@ -283,26 +283,54 @@ export function fromCosmeticKindFor(
   return edge?.from_cosmetic_kind ?? null;
 }
 
+/**
+ * The real sprite for (pokemonId, formId)'s own `kind` cosmetic form (e.g.
+ * Sandy Burmy's actual cloak sprite), if it's present in `cosmeticForms` —
+ * undefined otherwise, so the caller can fall back to the member's plain
+ * sprite_url. Only ever has an entry to find when `cosmeticForms` happens to
+ * be the SAME species currently being viewed (the page's own
+ * getCosmeticForms query result, keyed to the current pokemonId/formId) —
+ * a real, accepted scope limit: viewing the evolution line from a
+ * DIFFERENT chain member's own page (e.g. from Sandy Wormadam's page
+ * instead of Burmy's) doesn't have Burmy's own cosmetic_forms loaded, so
+ * that lane's icon falls back to the plain sprite there. Fixing that fully
+ * would need get_evolution_chain to bundle cosmetic_forms for every member,
+ * not just the one being viewed — a larger backend change than this lookup.
+ */
+export function cosmeticSpriteFor(
+  pokemonId: number,
+  formId: number,
+  kind: string | null,
+  cosmeticForms: CosmeticForm[],
+): string | undefined {
+  if (!kind) return undefined;
+  return cosmeticForms.find((f) => f.pokemon_id === pokemonId && f.form_id === formId && f.kind === kind)?.sprite_url;
+}
+
 function EvolutionChip({
   pokemon,
   isCurrent,
   searchContext,
   cosmeticKindLabel,
+  spriteUrlOverride,
 }: {
   pokemon: Pokemon;
   isCurrent: boolean;
   searchContext: Required<PokedexSearch>;
   /** A specific cosmetic form (e.g. "Sandy") this lane's step requires this member to currently be displaying — see EvolutionChainEdge.from_cosmetic_kind's own doc comment. Appended to the label so e.g. Burmy reads "Burmy (Sandy)" in the lane leading to Sandy Wormadam specifically, instead of looking identical across all 4 of Burmy's lanes. */
   cosmeticKindLabel?: string;
+  /** The matching cosmetic form's OWN sprite (e.g. Sandy Burmy's real cloak sprite), when available — so the chip's icon visually matches its label instead of always showing the base member's sprite regardless of which lane it's in. Falls back to pokemon.sprite_url when not available (e.g. viewing the chain from a different member's page, which doesn't have this member's own cosmetic_forms loaded — see the call site's own comment). */
+  spriteUrlOverride?: string;
 }) {
   const label = cosmeticKindLabel ? `${pokemon.display_name} (${cosmeticKindLabel})` : pokemon.display_name;
+  const spriteUrl = spriteUrlOverride ?? pokemon.sprite_url;
   if (isCurrent) {
     return (
       <Badge
         variant="outline"
         className="flex items-center gap-1.5 px-2 py-1 text-sm font-normal"
       >
-        <img src={pokemon.sprite_url} alt={label} className="size-6" />
+        <img src={spriteUrl} alt={label} className="size-6" />
         {label}
       </Badge>
     );
@@ -315,7 +343,7 @@ function EvolutionChip({
         search={{ ...searchContext, form: pokemon.form_id }}
         className="flex items-center gap-1.5"
       >
-        <img src={pokemon.sprite_url} alt={label} className="size-6" />
+        <img src={spriteUrl} alt={label} className="size-6" />
         {label}
       </Link>
     </Button>
@@ -336,11 +364,14 @@ export function EvolutionLineNav({
   edges,
   current,
   searchContext,
+  cosmeticForms,
 }: {
   chain: EvolutionChainMember[];
   edges: EvolutionChainEdge[];
   current: Pokemon;
   searchContext: Required<PokedexSearch>;
+  /** The current page's own cosmetic_forms (already fetched for the sprite gallery) — reused here so e.g. Sandy Burmy's chip can show its real cloak sprite when Burmy IS the page being viewed. See cosmeticSpriteFor's own doc comment for the scope limit when it isn't. */
+  cosmeticForms: CosmeticForm[];
 }) {
   const lanes = useMemo(() => buildEvolutionLanes(chain, edges), [chain, edges]);
   // Every lane shares one grid, each stage in its own column (member,
@@ -398,6 +429,7 @@ export function EvolutionLineNav({
                     }
                     searchContext={searchContext}
                     cosmeticKindLabel={fromCosmeticKind ? humanize(fromCosmeticKind) : undefined}
+                    spriteUrlOverride={cosmeticSpriteFor(member.pokemon.id, member.pokemon.form_id, fromCosmeticKind, cosmeticForms)}
                   />
                 </div>
               </Fragment>
@@ -754,6 +786,7 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
               edges={evolutionChain.edges}
               current={pokemon}
               searchContext={searchContext}
+              cosmeticForms={cosmeticForms ?? []}
             />
           </>
         )}

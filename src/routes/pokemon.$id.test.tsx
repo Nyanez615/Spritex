@@ -6,6 +6,7 @@ import {
   buildEvolutionLanes,
   buildSpriteVariants,
   CollectionPanel,
+  cosmeticSpriteFor,
   fromCosmeticKindFor,
   ProfileSection,
   shouldSkipPageKeyNav,
@@ -576,6 +577,35 @@ describe("buildEvolutionLanes", () => {
     it("returns null when no edge matches the given (from, to) pair at all", () => {
       const edges = [edge(412, 0, 413, 1, "sandy")];
       expect(fromCosmeticKindFor(1, 0, 2, 0, edges)).toBeNull();
+    });
+  });
+
+  describe("cosmeticSpriteFor", () => {
+    function cosmeticForm(pokemonId: number, formId: number, kind: string, spriteUrl: string): CosmeticForm {
+      return {
+        id: 1, pokemon_id: pokemonId, form_id: formId, kind, display_name: kind,
+        sprite_url: spriteUrl, shiny_sprite_url: "",
+        sprite_crop_x: 0, sprite_crop_y: 0, sprite_crop_width: 1, sprite_crop_height: 1,
+        mega_stone_item: null, types: "[]", height: 5, weight: 5, abilities: "[]",
+        stat_hp: 1, stat_attack: 1, stat_defense: 1, stat_special_attack: 1, stat_special_defense: 1, stat_speed: 1,
+        stat_total: 6, base_experience: 0, ev_yield_hp: 0, ev_yield_attack: 0, ev_yield_defense: 0,
+        ev_yield_special_attack: 0, ev_yield_special_defense: 0, ev_yield_speed: 0,
+      };
+    }
+
+    it("returns the matching cosmetic form's own sprite — Sandy Burmy's real cloak sprite, not Burmy's plain one", () => {
+      const cosmeticForms = [cosmeticForm(412, 0, "sandy", "burmy-sandy.png"), cosmeticForm(412, 0, "trash", "burmy-trash.png")];
+      expect(cosmeticSpriteFor(412, 0, "sandy", cosmeticForms)).toBe("burmy-sandy.png");
+      expect(cosmeticSpriteFor(412, 0, "trash", cosmeticForms)).toBe("burmy-trash.png");
+    });
+
+    it("returns undefined when kind is null — the Plant Cloak/Mothim case, where no specific cosmetic form is required", () => {
+      const cosmeticForms = [cosmeticForm(412, 0, "sandy", "burmy-sandy.png")];
+      expect(cosmeticSpriteFor(412, 0, null, cosmeticForms)).toBeUndefined();
+    });
+
+    it("returns undefined when cosmeticForms doesn't have a matching entry — e.g. viewing the chain from a different member's own page, which only has THAT member's cosmetic_forms loaded", () => {
+      expect(cosmeticSpriteFor(412, 0, "sandy", [])).toBeUndefined();
     });
   });
 });
