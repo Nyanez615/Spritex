@@ -169,15 +169,16 @@ function PokemonNavButton({
 }
 
 /**
- * True if a Left/Right keydown should be ignored for prev/next species
- * navigation — while the sprite gallery is open (it already binds the same
- * keys to cycle sprites, see SpriteGalleryDialog below), while focus is on a
- * form field (the stat simulator's level input, a Select trigger), or while
- * focus is trapped inside any dialog (e.g. "Mark as caught"), so cursor-
- * movement and dropdown-navigation keystrokes there aren't hijacked into a
- * page jump.
+ * True if a Left/Right/Escape keydown should be ignored for this page's own
+ * navigation (prev/next species, or Escape back to the dex) — while the
+ * sprite gallery is open (it already binds Left/Right itself to cycle
+ * sprites, and Escape to close, see SpriteGalleryDialog below), while focus
+ * is on a form field (the stat simulator's level input, a Select trigger),
+ * or while focus is trapped inside any OTHER dialog (e.g. "Mark as
+ * caught," which Radix already closes on Escape on its own) — so none of
+ * these get hijacked into a page jump on top of their own native behavior.
  */
-export function shouldSkipArrowNav(activeElement: Element | null, galleryOpen: boolean): boolean {
+export function shouldSkipPageKeyNav(activeElement: Element | null, galleryOpen: boolean): boolean {
   if (galleryOpen) return true;
   if (!(activeElement instanceof HTMLElement)) return false;
   const tag = activeElement.tagName;
@@ -549,15 +550,20 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [galleryOpen, setGalleryOpen] = useState(false);
   // Left/Right jump to the prev/next species, mirroring the header chevron
-  // buttons.
+  // buttons; Escape goes back to the dex, mirroring the header's back-arrow
+  // button (navigate({ to: "/" }), matching that Link exactly — no search
+  // params, same as today's back-arrow behavior).
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (shouldSkipArrowNav(document.activeElement, galleryOpen)) return;
+      if (shouldSkipPageKeyNav(document.activeElement, galleryOpen)) return;
       if (e.key === "ArrowLeft" && prevPokemon) {
         navigate({ to: "/pokemon/$id", params: { id: String(prevPokemon.id) }, search: { ...searchContext, form: prevPokemon.form_id } });
       }
       if (e.key === "ArrowRight" && nextPokemon) {
         navigate({ to: "/pokemon/$id", params: { id: String(nextPokemon.id) }, search: { ...searchContext, form: nextPokemon.form_id } });
+      }
+      if (e.key === "Escape") {
+        navigate({ to: "/" });
       }
     }
     window.addEventListener("keydown", onKeyDown);
