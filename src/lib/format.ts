@@ -53,8 +53,13 @@ export const FULL_CANVAS_CROP: SpriteCrop = { x: 0, y: 0, width: 1, height: 1 };
  * construction of the `1/max(width,height)` scale, not unique to one
  * species. A uniform margin (not a per-species tweak) gives every sprite
  * the same small breathing room the rest of the UI already has around it.
+ * An initial 0.92 (an 8% total margin, ~4% per side) measured out to only
+ * ~13px of breathing room on a 320px tile for Hisuian Lilligant — visually
+ * still read as cropped, confirmed by re-measuring the actual rendered
+ * margin in pixels, not just eyeballing a render. 0.85 (~7.5% per side)
+ * doubles that to a margin that's actually visible at typical tile sizes.
  */
-const CROP_FILL_FRACTION = 0.92;
+const CROP_FILL_FRACTION = 0.85;
 
 /**
  * A CSS `transform` value that zooms a sprite `<img>` in so its own real

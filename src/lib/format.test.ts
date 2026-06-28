@@ -87,12 +87,12 @@ function parseTransform(transform: string): { tx: number; ty: number; scale: num
   return { tx: Number(match[1]), ty: Number(match[2]), scale: Number(match[3]) };
 }
 
-// Mirrors format.ts's own private CROP_FILL_FRACTION (0.92) — the dominant
-// axis fills 92% of the box, not 100%, leaving a small margin instead of
+// Mirrors format.ts's own private CROP_FILL_FRACTION (0.85) — the dominant
+// axis fills 85% of the box, not 100%, leaving a real margin instead of
 // touching the edge. Inlined here rather than exported, matching this
 // file's existing convention of asserting the actual derived math rather
 // than importing a shared constant.
-const FILL = 0.92;
+const FILL = 0.85;
 
 describe("spriteCropTransform", () => {
   it("scales the full canvas down slightly (not a literal no-op) so its content doesn't touch the box edge", () => {
