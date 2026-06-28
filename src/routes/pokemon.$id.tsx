@@ -328,22 +328,22 @@ function EvolutionChip({
     return (
       <Badge
         variant="outline"
-        className="flex items-center gap-1.5 px-2 py-1 text-sm font-normal"
+        className="flex h-auto items-center gap-2 overflow-visible px-2 py-1.5 text-sm font-normal"
       >
-        <img src={spriteUrl} alt={label} className="size-6" />
+        <img src={spriteUrl} alt={label} className="size-12 object-contain" />
         {label}
       </Badge>
     );
   }
   return (
-    <Button asChild variant="outline" size="sm">
+    <Button asChild variant="outline" size="sm" className="h-auto gap-2 py-1.5">
       <Link
         to="/pokemon/$id"
         params={{ id: String(pokemon.id) }}
         search={{ ...searchContext, form: pokemon.form_id }}
-        className="flex items-center gap-1.5"
+        className="flex items-center gap-2"
       >
-        <img src={spriteUrl} alt={label} className="size-6" />
+        <img src={spriteUrl} alt={label} className="size-12 object-contain" />
         {label}
       </Link>
     </Button>
