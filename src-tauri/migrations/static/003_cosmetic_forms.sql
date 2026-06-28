@@ -1,7 +1,13 @@
--- Mega Evolution / Gigantamax — cosmetic battle forms, not distinct dex
--- entries (Mega reverts after battle; Gmax doesn't change shininess), so
--- these are a sibling table keyed by the base pokemon row, not new rows in
--- `pokemon` itself.
+-- Every sprite-bearing alternate appearance that isn't a distinct dex entry
+-- — both real-but-reverting battle states with their own stat block (Mega
+-- Evolution/Gigantamax/Zen Mode/Minior's Core colors: Mega reverts after
+-- battle, Gmax doesn't change shininess) AND purely decorative sprite
+-- variants with NO stat difference at all from their parent row (Unown's
+-- letters, Vivillon/Alcremie/Furfrou's patterns, Arceus/Silvally's
+-- Plate/Memory types, Shellos/Gastrodon's East Sea, ...) — so this is a
+-- sibling table keyed by the base pokemon row, not new rows in `pokemon`
+-- itself, for both reasons: one because the state doesn't persist, the
+-- other because there's nothing mechanical to even persist.
 CREATE TABLE cosmetic_forms (
     id                        INTEGER PRIMARY KEY AUTOINCREMENT,
     pokemon_id                INTEGER NOT NULL,

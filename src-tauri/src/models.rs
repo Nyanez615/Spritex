@@ -373,16 +373,21 @@ pub struct ShinyMethod {
     pub notes: Option<String>,
 }
 
-/// Battle-only/contextual cosmetic forms — Mega Evolution, Gigantamax, and
-/// (since the form-tracking audit) every other form confirmed to revert the
-/// instant you leave its triggering context (Zen Mode, Primal Reversion,
-/// Blade Aegislash, Busted Mimikyu, ...). Not distinct dex entries (none of
-/// these change shininess or persist in storage), so they never get their
-/// own `shiny_methods` rows. `kind` is stringly-typed (not an enum) since
-/// it's purely display, with a wide and growing set of values (one per
-/// distinct cosmetic transformation — "mega", "mega_x", "mega_y", "gmax",
-/// "zen", "primal", "busted", ...) that nothing filters/queries on the way
-/// Game/Method do.
+/// Every sprite-bearing alternate appearance that isn't a distinct dex
+/// entry — battle-only/contextual forms confirmed to revert the instant you
+/// leave their triggering context (Mega Evolution, Gigantamax, Zen Mode,
+/// Primal Reversion, Blade Aegislash, Busted Mimikyu, Minior's Core
+/// colors, ...) AND (since the exhaustive sprite-coverage pass) purely
+/// decorative variants with no mechanical difference at all from their
+/// parent row (Unown's letters, Vivillon/Alcremie/Furfrou's patterns,
+/// Arceus/Silvally's Plate/Memory types, Shellos/Gastrodon's East Sea,
+/// ...). Not distinct dex entries either way (none of these change
+/// shininess or persist in storage as their own individual), so they never
+/// get their own `shiny_methods` rows. `kind` is stringly-typed (not an
+/// enum) since it's purely display, with a wide and growing set of values
+/// (one per distinct cosmetic transformation/sprite — "mega", "mega_x",
+/// "mega_y", "gmax", "zen", "primal", "busted", "east", "fire", "b", ...)
+/// that nothing filters/queries on the way Game/Method do.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CosmeticForm {

@@ -300,9 +300,13 @@ interface PokeApiPokemon {
 interface PokeApiForm {
   is_battle_only: boolean;
   is_mega: boolean;
+  is_default: boolean;
   form_name: string;
   names: PokeApiLocalizedName[];
   version_group: PokeApiNamedResource;
+  sprites: PokeApiSprites;
+  /** Real per-form type override (e.g. Arceus's "fire" form really is Fire-type) — empty for forms with no override, in which case the parent variety's own type applies. */
+  types: Array<{ slot: number; type: PokeApiNamedResource }>;
 }
 
 interface PokeApiVersionGroup {
@@ -574,6 +578,64 @@ function cosmeticFormKind(form: PokeApiForm): CosmeticFormKind | undefined {
   return undefined;
 }
 
+/**
+ * Every additional sprite PokéAPI attaches to ONE variety's own `pokemon`
+ * resource (`pokemon.forms`, not `species.varieties`) — a structurally
+ * different shape than every other form this pipeline tracks, confirmed
+ * live for Shellos/Gastrodon (West/East Sea), Arceus/Silvally (18
+ * Plate/Memory types each), Unown (28 letters), Vivillon/Scatterbug/Spewpa
+ * (20 regional patterns each), Alcremie (63 cream/sweet combinations),
+ * Furfrou (10 trims), Genesect (4 Drives), Deerling/Sawsbuck (4 seasons),
+ * Floette's family (5 flower colors per stage), Burmy/Mothim, Cherrim
+ * (Sunshine — confirmed via a live DB check this was NOT actually already
+ * tracked despite an earlier round's documentation claiming it was: Cherrim
+ * has only one `species.varieties` entry, so the existing per-variety
+ * `is_battle_only` cosmetic path never even runs for it), Xerneas (Active
+ * Mode), and Sinistea/Polteageist/Sinistcha/Poltchageist's Antique/Artisan/
+ * Masterpiece forms. None of these have their own separate stat block
+ * (confirmed: they're all attached to the SAME `pokemon` resource, sharing
+ * its stats/abilities/height/weight) — they exist purely to be displayed,
+ * so every field but sprite/type/displayName is copied from `shared`.
+ * `types` is taken from the FORM's own (confirmed real per-form override —
+ * Arceus's "fire" form really does report Fire-type) when present, falling
+ * back to the parent variety's types when a form has no override.
+ *
+ * The form flagged `is_default` is always the variety's own baseline
+ * appearance (confirmed live: Unown's bare sprite is byte-identical to its
+ * "unown-a" form's) — skipped, since `shared.spriteUrl` already captures
+ * it. Forms named "female" are also skipped — confirmed live (Frillish/
+ * Jellicent/Pyroar, whose default variety is itself named "{species}-male")
+ * that this is exactly the same sprite `femaleSprite()` already extracts
+ * from the bare `pokemon.sprites.front_female` field, just exposed a second
+ * time via the forms mechanism; tracking it again here would duplicate the
+ * existing gender-difference sprite tile rather than add anything new.
+ */
+async function extraSpriteForms(
+  limiter: ConcurrencyLimiter,
+  pokemon: PokeApiPokemon,
+  ownFormId: number,
+  shared: Omit<FetchedCosmeticForm, "pokemonId" | "baseFormId" | "kind" | "displayName" | "spriteUrl" | "shinySpriteUrl" | "megaStoneItem">,
+): Promise<FetchedCosmeticForm[]> {
+  if (pokemon.forms.length <= 1) return [];
+  const extras: FetchedCosmeticForm[] = [];
+  for (const formRef of pokemon.forms) {
+    const form = await limiter.run(() => cachedJson<PokeApiForm>("pokeapi-form", formRef.name, formRef.url));
+    if (form.is_default || form.form_name === "female") continue;
+    extras.push({
+      pokemonId: 0, // filled in by the caller, which knows the species id
+      baseFormId: ownFormId,
+      kind: form.form_name,
+      displayName: englishName(form.names, pokemon.name),
+      spriteUrl: bestSprite(form.sprites, false),
+      shinySpriteUrl: bestSprite(form.sprites, true),
+      megaStoneItem: null,
+      ...shared,
+      types: form.types.length > 0 ? form.types.map((t) => t.type.name) : shared.types,
+    });
+  }
+  return extras;
+}
+
 async function fetchVarietyDetail(
   limiter: ConcurrencyLimiter,
   variety: { is_default: boolean; pokemon: PokeApiNamedResource },
@@ -581,7 +643,7 @@ async function fetchVarietyDetail(
   formIndex: number,
   speciesName: string,
   megaStoneMap: Map<string, string>,
-): Promise<{ variety?: FetchedVariety; cosmeticForm?: FetchedCosmeticForm }> {
+): Promise<{ variety?: FetchedVariety; cosmeticForm?: FetchedCosmeticForm; extraCosmeticForms: FetchedCosmeticForm[] }> {
   const pokemon = await limiter.run(() => cachedJson<PokeApiPokemon>("pokeapi-pokemon", variety.pokemon.name, variety.pokemon.url));
   const shared = {
     types: pokemon.types.map((t) => t.type.name),
@@ -596,10 +658,18 @@ async function fetchVarietyDetail(
     baseExperience: pokemon.base_experience ?? 0,
     ...extractEvYield(pokemon.stats),
   };
+  // Computed unconditionally and threaded through every return path below —
+  // a variety can have extra display-only sprites attached regardless of
+  // whether the variety itself ends up as a real `pokemon` row, a
+  // cosmeticForm (Mega/Gmax/Minior Core/...), or dropped entirely (none of
+  // this dataset's currently-dropped varieties happen to have any extras of
+  // their own, but nothing should assume that stays true forever).
+  const ownFormId = variety.is_default ? 0 : formIndex;
+  const extraCosmeticForms = await extraSpriteForms(limiter, pokemon, ownFormId, shared);
 
   if (!variety.is_default) {
     const formRef = pokemon.forms[0];
-    if (!formRef) return {};
+    if (!formRef) return { extraCosmeticForms };
     const form = await limiter.run(() => cachedJson<PokeApiForm>("pokeapi-form", formRef.name, formRef.url));
     // GROUP_A_FORM_NAMES takes priority over is_battle_only — PokéAPI's flag
     // misleadingly marks a few real, persistent forms this way (Crowned
@@ -616,8 +686,9 @@ async function fetchVarietyDetail(
       (form.is_battle_only || form.is_mega || FORCE_COSMETIC_FORM_NAMES.has(form.form_name))
     ) {
       const kind = cosmeticFormKind(form);
-      if (!kind) return {}; // other battle-only cosmetic (Crowned, Eternamax, ...) — not modeled
+      if (!kind) return { extraCosmeticForms }; // other battle-only cosmetic (Crowned, Eternamax, ...) — not modeled
       return {
+        extraCosmeticForms,
         cosmeticForm: {
           pokemonId: 0, // filled in by the caller, which knows the species id
           baseFormId: 0, // placeholder — the caller re-resolves this via resolveCosmeticBaseFormId once the species' full varieties list is known
@@ -667,17 +738,18 @@ async function fetchVarietyDetail(
     // game-mechanic equivalent of battle-only despite PokéAPI not flagging
     // it that way. Exclude explicitly, before the regional-adjective check
     // below (which "Totem Alolan Marowak" would otherwise also pass).
-    if (/\bTotem\b/.test(formDisplayName)) return {};
+    if (/\bTotem\b/.test(formDisplayName)) return { extraCosmeticForms };
     const adjective = REGIONAL_ADJECTIVES.find((adj) => new RegExp(`\\b${adj}\\b`).test(formDisplayName));
     const groupAName = GROUP_A_FORM_NAMES.has(form.form_name) ? humanizeFormName(form.form_name) : undefined;
     const formName = adjective ?? groupAName;
-    if (!formName) return {}; // cosmetic-only variant (pattern/cap/season/etc.) — not modeled
+    if (!formName) return { extraCosmeticForms }; // cosmetic-only variant (pattern/cap/season/etc.) — not modeled
 
     const versionGroup = await limiter.run(() =>
       cachedJson<PokeApiVersionGroup>("pokeapi-version-group", form.version_group.name, form.version_group.url),
     );
     const override = PARTNER_FORM_OVERRIDES[formName];
     return {
+      extraCosmeticForms,
       variety: {
         formId: formIndex,
         formName,
@@ -692,6 +764,7 @@ async function fetchVarietyDetail(
   }
 
   return {
+    extraCosmeticForms,
     variety: {
       formId: 0,
       formName: null,
@@ -730,9 +803,10 @@ export async function fetchAllSpecies(): Promise<{ species: FetchedSpecies[]; co
 
       const varieties: FetchedVariety[] = [];
       const speciesCosmeticForms: FetchedCosmeticForm[] = [];
+      const speciesExtraCosmeticForms: FetchedCosmeticForm[] = [];
       let formIndex = 1;
       for (const variety of species.varieties) {
-        const { variety: detail, cosmeticForm } = await fetchVarietyDetail(
+        const { variety: detail, cosmeticForm, extraCosmeticForms } = await fetchVarietyDetail(
           limiter, variety, displayName, variety.is_default ? 0 : formIndex, species.name, megaStoneMap,
         );
         if (detail) {
@@ -748,6 +822,7 @@ export async function fetchAllSpecies(): Promise<{ species: FetchedSpecies[]; co
         if (cosmeticForm) {
           speciesCosmeticForms.push(cosmeticForm);
         }
+        speciesExtraCosmeticForms.push(...extraCosmeticForms);
       }
       varieties.sort((a, b) => a.formId - b.formId);
       // baseFormId resolution needs the species' FULL varieties list (e.g.
@@ -760,6 +835,12 @@ export async function fetchAllSpecies(): Promise<{ species: FetchedSpecies[]; co
           pokemonId: species.id,
           baseFormId: resolveCosmeticBaseFormId(cosmeticForm.kind, varieties),
         });
+      }
+      // extraCosmeticForms already know their own correct baseFormId (the
+      // exact variety they were fetched alongside, no guessing needed the
+      // way resolveCosmeticBaseFormId's kind-string-matching does above).
+      for (const extra of speciesExtraCosmeticForms) {
+        cosmeticForms.push({ ...extra, pokemonId: species.id });
       }
 
       out.push({

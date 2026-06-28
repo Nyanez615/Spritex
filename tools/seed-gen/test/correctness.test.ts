@@ -1087,3 +1087,48 @@ test("Eternal Floette (#670, form 1) has zero evolution_edges rows — it does n
     "expected the real Floette (base form) -> Florges edge to still exist",
   );
 });
+
+test("Shellos (#422) and Gastrodon (#423) each get a real East Sea cosmetic_forms sprite — confirmed via Bulbapedia these are genuinely a different PokéAPI data shape than every other tracked form: a single pokemon-form resource attached to ONE shared variety (not a separate stat-bearing variety the way Basculin's stripes are), so they correctly stay one pokemon row each while still surfacing both sprites in the gallery", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const shellosEast = cosmeticForms.find((f) => f.pokemon_id === 422 && f.kind === "east");
+  const gastrodonEast = cosmeticForms.find((f) => f.pokemon_id === 423 && f.kind === "east");
+  assert.ok(shellosEast, "expected an East Shellos cosmetic_forms row");
+  assert.ok(gastrodonEast, "expected an East Gastrodon cosmetic_forms row");
+  assert.equal(shellosEast!.display_name, "East Shellos");
+  assert.equal(gastrodonEast!.display_name, "East Gastrodon");
+});
+
+test("Arceus (#493) gets 18 cosmetic_forms sprites (one per type PokéAPI tracks, including \"unknown\") with each form's OWN real type override (e.g. \"Fire Arceus\" is Fire-type) — confirmed this is a real, per-form PokéAPI field (form.types), not guessed or inherited from the base Normal-type row, even though Arceus's own pokemon row correctly stays Normal-type and keeps identical stats across every sprite (the type change is a real-time held-item effect, not a persistent form)", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const arceusForms = cosmeticForms.filter((f) => f.pokemon_id === 493);
+  assert.equal(arceusForms.length, 18);
+  const fireArceus = arceusForms.find((f) => f.kind === "fire")!;
+  assert.deepEqual(JSON.parse(fireArceus.types), ["fire"]);
+});
+
+test("Cherrim (#421) gets a real Sunshine cosmetic_forms sprite — regression test for a real, previously-undocumented gap: an earlier round's CLAUDE.md write-up claimed Cherrim's weather forms were \"already tracked\" alongside Castform/Cramorant, but Cherrim (unlike those two) has only ONE species.varieties entry, so the pre-existing is_battle_only-driven per-variety cosmetic path never actually ran for it at all — confirmed live via a direct DB query before this round that cosmetic_forms had zero Cherrim rows despite the documentation's claim", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const sunshineCherrim = cosmeticForms.find((f) => f.pokemon_id === 421 && f.kind === "sunshine");
+  assert.ok(sunshineCherrim, "expected a Sunshine Cherrim cosmetic_forms row");
+  assert.equal(sunshineCherrim!.display_name, "Sunshine Cherrim");
+});
+
+test("Frillish (#592), Jellicent (#593), and Pyroar (#668) get NO extra cosmetic_forms sprite for their gender-difference forms — confirmed these 3 species expose their female sprite via a PokéAPI \"female\"-named form attached to the male-named default variety (a structurally different shape than every other species' gender difference, which lives in the bare pokemon.sprites.front_female field instead), and that sprite is already fully captured by the existing has_gender_differences/sprite_url_female mechanism — tracking it again here would duplicate the existing gender-difference tile rather than add anything new", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  for (const pokemonId of [592, 593, 668]) {
+    assert.ok(
+      !cosmeticForms.some((f) => f.pokemon_id === pokemonId && f.kind === "female"),
+      `expected no "female" cosmetic_forms row for pokemon_id ${pokemonId}`,
+    );
+  }
+  const pokemon = await readOutJson<PokemonRow[]>("pokemon.json");
+  const frillish = pokemon.find((p) => p.id === 592 && p.form_id === 0)!;
+  assert.ok(frillish.sprite_url_female, "expected Frillish's real gender-difference sprite to still be captured via the existing mechanism");
+});
+
+test("Unown (#201) gets 27 extra cosmetic_forms sprites — one per letter B-Z plus !/? — confirmed via PokéAPI that its bare default sprite is byte-identical to its own \"unown-a\" form (the is_default:true one, correctly skipped to avoid a duplicate tile)", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const unownForms = cosmeticForms.filter((f) => f.pokemon_id === 201);
+  assert.equal(unownForms.length, 27);
+  assert.ok(!unownForms.some((f) => f.kind === "a"), "expected Unown A (the default form) to be excluded, not duplicated");
+});
