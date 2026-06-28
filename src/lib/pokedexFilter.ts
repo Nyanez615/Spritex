@@ -246,6 +246,36 @@ export function filterPokemon(pokemon: Pokemon[], search: Required<PokedexSearch
   });
 }
 
+/**
+ * `filterPokemon`'s `gens` facet is deliberately strict per-form — since
+ * round 7, each variety's `generation` is the one it was ITSELF introduced
+ * in, not its base species' (Alolan Rattata is 7, not 1; Hisuian Typhlosion
+ * is 8, not 2) — confirmed real and correct for the grid's own filtering,
+ * where it answers "which species/forms exist in generation N." But the
+ * detail page's next/prev sequence has a different job: once you've landed
+ * on a species via a generation filter, you should still be able to step
+ * through every one of its forms before moving to the next species, even
+ * if a given form happens to have been introduced in a different
+ * generation — confirmed live user-reported confusion (Typhlosion, Wooper):
+ * filtering to Generation 2 and clicking next from Typhlosion skipped
+ * straight past Hisuian Typhlosion (generation 8) to Totodile, even though
+ * the grid's own card popover still shows Hisuian Typhlosion grouped with
+ * Typhlosion regardless of the filter.
+ *
+ * Re-filters `allPokemon` against every facet EXCEPT `gens`, then keeps
+ * only the species (`id`) that have at least one form passing the FULL
+ * filter (gens included) — so a sibling is included exactly when its own
+ * id would otherwise show up in the filtered sequence, and still correctly
+ * excluded if it fails some OTHER active facet (color, type, ...) on its
+ * own merits.
+ */
+export function withGenerationSiblings(allPokemon: Pokemon[], search: Required<PokedexSearch>): Pokemon[] {
+  if (search.gens.length === 0) return filterPokemon(allPokemon, search);
+  const filteredIgnoringGens = filterPokemon(allPokemon, { ...search, gens: [] });
+  const idsPassingFully = new Set(filterPokemon(allPokemon, search).map((p) => p.id));
+  return filteredIgnoringGens.filter((p) => idsPassingFully.has(p.id));
+}
+
 /** Assumes `list` is already in natural ascending (id, form_id) order when sort==="dex" — true for both index.tsx's query result and usePokemonLookup's `ordered`, which read from the same backend query. */
 export function sortPokemonList(list: Pokemon[], sort: SortKey, sortDir: SortDir): Pokemon[] {
   const ascending = sortDir === "asc";

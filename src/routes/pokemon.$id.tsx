@@ -47,9 +47,9 @@ import { usePokemonLookup } from "@/hooks/usePokemonLookup";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 import {
   DEFAULT_SORT_DIRECTION,
-  filterPokemon,
   sortPokemonList,
   validatePokedexSearch,
+  withGenerationSiblings,
   type PokedexSearch,
 } from "@/lib/pokedexFilter";
 import { cn } from "@/lib/utils";
@@ -437,7 +437,7 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
   }, [rawSearchContext]);
   const { ordered: allPokemon } = usePokemonLookup();
   const contextOrderedPokemon = useMemo(
-    () => sortPokemonList(filterPokemon(allPokemon, searchContext), searchContext.sort, searchContext.sortDir),
+    () => sortPokemonList(withGenerationSiblings(allPokemon, searchContext), searchContext.sort, searchContext.sortDir),
     [allPokemon, searchContext],
   );
   const { prevPokemon, nextPokemon } = useMemo(() => {
