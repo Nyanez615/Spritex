@@ -583,8 +583,23 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
         </span>
       </div>
       <div className="flex-1 overflow-auto p-6 space-y-6">
-        <div className="flex gap-6">
-          <div className="flex flex-col gap-2">
+        {/* items-start (not the flex default, stretch) keeps the Legendary/
+            Generation column pinned near the top, next to the sprite
+            gallery's first row — without it, that column's own
+            `justify-center` instead centers it against the gallery's full,
+            potentially very tall, stretched height (a species with many
+            cosmetic-only sprites wraps into many rows), landing it
+            somewhere in the middle of the gallery rather than at the top. */}
+        <div className="flex gap-6 items-start">
+          {/* max-w caps how wide the sprite grid can grow before wrapping —
+              without it, a species with many cosmetic-only sprites (Unown's
+              27 letters, Alcremie's 62 cream/sweet combinations) has nothing
+              constraining its flex-wrap row's width, so it balloons out to
+              fit everything in as few rows as possible, pushing the
+              Legendary/Generation column far to the right instead of
+              keeping it at a consistent position next to a normal-width
+              gallery. */}
+          <div className="flex flex-col gap-2 max-w-2xl">
             <div className="flex gap-4 flex-wrap">
               {standardVariants.map(({ variant, i }) => (
                 <SpriteBlock
@@ -618,7 +633,7 @@ function PokemonDetailContent({ id, form }: { id: string; form: number }) {
               <Maximize2 className="size-3.5" /> Expand sprites
             </Button>
           </div>
-          <div className="flex flex-col gap-2 justify-center">
+          <div className="flex flex-col gap-2 justify-center shrink-0">
             <div className="flex gap-1.5 flex-wrap">
               {pokemon.is_legendary && (
                 <Badge variant="outline">Legendary</Badge>

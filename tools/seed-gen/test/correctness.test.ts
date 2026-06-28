@@ -1126,9 +1126,26 @@ test("Frillish (#592), Jellicent (#593), and Pyroar (#668) get NO extra cosmetic
   assert.ok(frillish.sprite_url_female, "expected Frillish's real gender-difference sprite to still be captured via the existing mechanism");
 });
 
-test("Unown (#201) gets 27 extra cosmetic_forms sprites — one per letter B-Z plus !/? — confirmed via PokéAPI that its bare default sprite is byte-identical to its own \"unown-a\" form (the is_default:true one, correctly skipped to avoid a duplicate tile)", async () => {
+test("Unown (#201) gets 27 extra cosmetic_forms sprites — one per letter B-Z plus !/? — confirmed via PokéAPI that its bare default sprite is byte-identical to its own \"unown-a\" form (the is_default:true one, correctly skipped to avoid a duplicate tile) — and, regression test for a real bug: every letter's OWN sprite_url is genuinely distinct, not all silently collapsed to the same (default) sprite", async () => {
   const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
   const unownForms = cosmeticForms.filter((f) => f.pokemon_id === 201);
   assert.equal(unownForms.length, 27);
   assert.ok(!unownForms.some((f) => f.kind === "a"), "expected Unown A (the default form) to be excluded, not duplicated");
+  const distinctSprites = new Set(unownForms.map((f) => f.sprite_url));
+  assert.equal(
+    distinctSprites.size,
+    unownForms.length,
+    "expected every Unown letter to have its OWN distinct sprite_url — found a bug where `...shared` was spread AFTER the per-form spriteUrl/shinySpriteUrl in extraSpriteForms, clobbering every form's real sprite with the parent variety's own (every letter rendered identically in the gallery)",
+  );
+  assert.ok(
+    unownForms.every((f) => f.sprite_url.includes(`-${f.kind}`)),
+    "expected each letter's sprite_url to contain its own kind as a suffix (e.g. \"201-b.png\"), not the bare default \"201.png\"",
+  );
+});
+
+test("Arceus (#493)'s 18 type-form sprites each have their own distinct sprite_url, the same regression class as Unown's", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const arceusForms = cosmeticForms.filter((f) => f.pokemon_id === 493);
+  const distinctSprites = new Set(arceusForms.map((f) => f.sprite_url));
+  assert.equal(distinctSprites.size, arceusForms.length);
 });

@@ -622,6 +622,14 @@ async function extraSpriteForms(
     const form = await limiter.run(() => cachedJson<PokeApiForm>("pokeapi-form", formRef.name, formRef.url));
     if (form.is_default || form.form_name === "female") continue;
     extras.push({
+      // `shared` spreads FIRST — it's the parent variety's own sprite/types/
+      // stats, used as the fallback for everything this form doesn't
+      // override. Every per-form value (sprite/shiny sprite/types/kind/
+      // display name) is set AFTER the spread specifically so it WINS —
+      // confirmed live this was backwards in an earlier version (`...shared`
+      // spread last clobbered the per-form sprite URLs with the parent's
+      // own, so every Unown letter rendered the identical base sprite).
+      ...shared,
       pokemonId: 0, // filled in by the caller, which knows the species id
       baseFormId: ownFormId,
       kind: form.form_name,
@@ -629,7 +637,6 @@ async function extraSpriteForms(
       spriteUrl: bestSprite(form.sprites, false),
       shinySpriteUrl: bestSprite(form.sprites, true),
       megaStoneItem: null,
-      ...shared,
       types: form.types.length > 0 ? form.types.map((t) => t.type.name) : shared.types,
     });
   }
