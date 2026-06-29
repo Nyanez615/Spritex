@@ -28,6 +28,24 @@ interface PokeApiItem {
 
 const EFFECT_PATTERN = /^Held: Allows (.+?) to Mega Evolve into Mega \1(?: (X|Y))?\.$/;
 
+/**
+ * Explicit overrides for Mega Stones PokéAPI hasn't indexed AT ALL yet —
+ * confirmed live that "victreebelite" isn't even listed in PokéAPI's own
+ * `item-category/mega-stones` category (not just a 404 on the item resource
+ * itself), so there's nothing for the regex-parse loop below to discover no
+ * matter how it's written. Mega Victreebel itself is real, confirmed via
+ * Bulbapedia ("Victreebel can Mega Evolve into Mega Victreebel using the
+ * Victreebelite. Mega Victreebel was introduced in Pokémon Legends: Z-A.")
+ * — only the held-item fact is currently inexpressible from PokéAPI's
+ * structured data, the same precedent PARTNER_FORM_OVERRIDES/
+ * COSMETIC_BASE_FORM_OVERRIDES already set for other PokéAPI-inexpressible
+ * facts. Merged in AFTER the live API data below so this never shadows a
+ * real value once PokéAPI catches up.
+ */
+const MEGA_STONE_OVERRIDES: Record<string, string> = {
+  "victreebel:mega": "victreebelite",
+};
+
 /** Keyed by `${baseSpeciesName}:${kind}`, e.g. "venusaur:mega", "charizard:mega_x" — values are item slugs, e.g. "venusaurite". */
 export async function fetchMegaStoneMap(): Promise<Map<string, string>> {
   const category = await cachedJson<PokeApiItemCategory>(
@@ -55,5 +73,8 @@ export async function fetchMegaStoneMap(): Promise<Map<string, string>> {
       map.set(`${speciesName}:${kind}`, item.name);
     }),
   );
+  for (const [key, itemSlug] of Object.entries(MEGA_STONE_OVERRIDES)) {
+    if (!map.has(key)) map.set(key, itemSlug);
+  }
   return map;
 }

@@ -1285,3 +1285,34 @@ test("Hisuian Lilligant (#549 form 1)'s shiny sprite gets its OWN measured crop,
   assert.equal(hisuianLilligant.sprite_crop_height_shiny, 1, "expected the shiny sprite's content to reach the very top of its canvas");
   assert.ok(hisuianLilligant.sprite_crop_height < 0.9, "expected the standard sprite's content to stop well short of the canvas edge");
 });
+
+test("Hisuian Growlithe/Arcanine/Voltorb (#58/#59/#100, form 1) are the ONLY forms with Legends: Arceus availability — the Kantonian forms (form 0) must have ZERO pla rows — regression test for a real bug found auditing species #51-100: Bulbapedia's own per-region sub-headers in PLA location lists (e.g. \"'''[[Coronet Highlands]]:'''\") are bolded the same way real form annotations are (e.g. \"('''Hisuian Form''')\"), and the old resolveAnnotation had no way to tell them apart — an unmatched region name fell through to the \"unmatched -> form 0\" fallback, wrongly attributing the Hisuian-only availability described in that same segment to the Kantonian form too", async () => {
+  for (const [pokemonId, name] of [[58, "Growlithe"], [59, "Arcanine"], [100, "Voltorb"]] as const) {
+    const kantonian = await methodsFor(pokemonId, 0);
+    const hisuian = await methodsFor(pokemonId, 1);
+    assert.equal(
+      kantonian.filter((m) => m.game === "pla").length,
+      0,
+      `expected Kantonian ${name} to have zero Legends: Arceus rows — it's explicitly "Unobtainable (Kantonian Form)" on Bulbapedia`,
+    );
+    assert.ok(
+      hisuian.some((m) => m.game === "pla"),
+      `expected Hisuian ${name} to have at least one Legends: Arceus row`,
+    );
+  }
+});
+
+test("Mankey (#56)'s Black 2/White 2 availability is a real in-game trade, not a wild encounter — regression test for a real bug found auditing species #51-100: Bulbapedia's \"[[In-game trade#Black 2 and White 2|Trade]]\" wikilink (with a #Section anchor before the pipe) wasn't recognized by the trade-marker regex, which only matched the anchor-less \"[[In-game trade|Trade]]\" form, so Mankey's real trade with Curtis in Nimbasa City was silently misclassified as a wild encounter", async () => {
+  const mankey = await methodsFor(56, 0);
+  const b2w2 = mankey.find((m) => m.game === "gen5_b2_w2" && m.method === "wild");
+  assert.ok(b2w2, "expected a gen5_b2_w2 row for Mankey");
+  assert.equal(b2w2!.acquisition_method, "trade");
+  assert.equal(b2w2!.is_wild_encounter, false);
+});
+
+test("Mega Victreebel (#71) has its real held item, victreebelite — regression test for a real bug found auditing species #51-100: PokéAPI hasn't indexed this brand-new Pokémon Legends: Z-A item at all yet (confirmed live: missing from item-category/mega-stones entirely, not just a 404 on the item resource), so the existing effect-text-parsing loop has nothing to discover no matter how it's written — fixed via a small, explicitly-cited MEGA_STONE_OVERRIDES entry, the same precedent PARTNER_FORM_OVERRIDES/COSMETIC_BASE_FORM_OVERRIDES already set for other PokéAPI-inexpressible facts", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const megaVictreebel = cosmeticForms.find((f) => f.pokemon_id === 71 && f.kind === "mega")!;
+  assert.ok(megaVictreebel, "expected a Mega Victreebel cosmetic_forms row");
+  assert.equal(megaVictreebel.mega_stone_item, "victreebelite");
+});

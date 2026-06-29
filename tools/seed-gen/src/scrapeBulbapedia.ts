@@ -198,6 +198,19 @@ function resolveAnnotation(
   const qualifierMatch = withoutParen.match(/^(.+?)\s+(?:Forms?|Cloaks?|Variet(?:y|ies)|Sizes?|Flowers?)$/i);
   const namesText = qualifierMatch ? qualifierMatch[1] : withoutParen;
   if (!namesText) return [0]; // not a recognizable annotation at all — treat as the base form
+  // A bolded region/location sub-header — Bulbapedia's own per-region
+  // breakdown convention for Legends: Arceus (and similar) location lists,
+  // e.g. "'''[[Coronet Highlands]]:'''" — always ends with a colon once
+  // rendered, confirmed structurally distinct from every real form
+  // annotation (which never does). Regression test for a real bug found
+  // auditing Hisuian Growlithe/Arcanine/Voltorb: the caller's matchAll
+  // picks up EVERY bold span in a segment, including a region header
+  // sharing a segment with a real "('''Hisuian Form''')" annotation —
+  // without this check, the unmatched region name fell through to the
+  // "unmatched -> form 0" fallback below, wrongly attributing that whole
+  // segment's availability to the Kantonian/default form too, even though
+  // the segment's own text explicitly scoped it to the Hisuian form only.
+  if (namesText.endsWith(":")) return [];
   if (namesText.toLowerCase() === "all") return varieties.map((v) => v.formId); // "All Forms"/"All Sizes"
 
   const names = namesText.split("/").map((n) => {
@@ -263,7 +276,7 @@ function resolveAnnotation(
 const NON_WILD_MARKERS: Array<{ regex: RegExp; category: AcquisitionMethod }> = [
   { regex: /\[\[List of in-game event Pokémon/i, category: "gift" }, // covers both "Received" gifts and "(Only one)" statics
   { regex: /\[\[First partner Pokémon\]\]/i, category: "gift" }, // starter-gift link, used identically across every generation
-  { regex: /\[\[Trade|\[\[In-game trade\|Trade\]\]|Traded from/i, category: "trade" }, // explicit trade link ([[Trade...]] or the differently-titled [[In-game trade|Trade]], confirmed: Raichu's Legends: Z-A entry), or plain-text "Traded from" (confirmed: Chespin X/Y)
+  { regex: /\[\[Trade|\[\[In-game trade(?:#[^|\]]*)?\|Trade\]\]|Traded from/i, category: "trade" }, // explicit trade link ([[Trade...]] or the differently-titled [[In-game trade|Trade]], confirmed: Raichu's Legends: Z-A entry, optionally with a #Section anchor before the pipe, confirmed: Mankey's Black 2/White 2 entry, "[[In-game trade#Black 2 and White 2|Trade]]"), or plain-text "Traded from" (confirmed: Chespin X/Y)
   { regex: /\[\[Evolution\|Evolve/i, category: "evolution" }, // evolution-only path
   { regex: /Evolve\s*\{\{p\|/i, category: "evolution" }, // alt evolution-link wikitext form
   { regex: /Hatch\s*\{\{pkmn\|Egg\}\}/i, category: "hatch" }, // breeding/hatch-only — non-wild for chain-mechanic purposes
