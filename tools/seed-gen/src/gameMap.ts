@@ -123,6 +123,14 @@ export const BULBAPEDIA_LABEL_TO_GAMES: Record<string, Game[]> = {
   Sword: ["swsh"],
   Shield: ["swsh"],
   "Expansion Pass": ["swsh"],
+  // Version-suffixed variants of the SwSh Expansion Pass, same as the
+  // "The Hidden Treasure of Area Zero (Scarlet)"/"(Violet)" split below —
+  // Bulbapedia uses them when a species' Expansion Pass encounter differs by
+  // version (confirmed live, round 26: Omanyte/Omastar's "v=Sword Expansion
+  // Pass" surf/raid entries). Missing these silently dropped the whole entry
+  // (parseAvailability's `if (!games) continue;`), so both had zero swsh rows.
+  "Sword Expansion Pass": ["swsh"],
+  "Shield Expansion Pass": ["swsh"],
   "The Isle of Armor": ["swsh"],
   "The Crown Tundra": ["swsh"],
   "Brilliant Diamond": ["bdsp"],
@@ -145,6 +153,14 @@ export const BULBAPEDIA_LABEL_TO_GAMES: Record<string, Game[]> = {
   "The Teal Mask": ["sv"],
   "The Indigo Disk": ["sv"],
   "Legends: Z-A": ["legends_za"],
+  // The Legends: Z-A "Mega Dimension" DLC folds into the base legends_za Game
+  // value, exactly as every other DLC label folds into its base game above
+  // (Expansion Pass → swsh, Teal Mask/Indigo Disk → sv). Its hyperspace wild
+  // zones are real, shiny-rollable native availability — confirmed live
+  // (round 26): Aerodactyl's "v=Mega Dimension|area=[[Hyperspace Lumiose]]
+  // (5★ Rock-type wild zones)". Previously unmapped, so that availability was
+  // silently dropped.
+  "Mega Dimension": ["legends_za"],
 };
 
 /**

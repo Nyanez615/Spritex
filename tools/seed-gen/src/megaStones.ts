@@ -44,6 +44,19 @@ const EFFECT_PATTERN = /^Held: Allows (.+?) to Mega Evolve into Mega \1(?: (X|Y)
  */
 const MEGA_STONE_OVERRIDES: Record<string, string> = {
   "victreebel:mega": "victreebelite",
+  // Confirmed live (round 26, auditing #1-151) — same gap, same fix: each of
+  // these is a real, Bulbapedia-confirmed Legends: Z-A "Mega Dimension" Mega
+  // Evolution (infobox `|mega=`/`|mega2=` field) whose stone item PokéAPI
+  // hasn't indexed at all yet. Only the 4 species actually within the #1-151
+  // audit range are added here — a much larger, database-wide sweep of the
+  // same gap (42 more species/forms across every later generation) was found
+  // while investigating this, but is out of scope for a Gen 1 audit; see
+  // CLAUDE.md's own note on the remaining scope.
+  "raichu:mega_x": "raichunite-x",
+  "raichu:mega_y": "raichunite-y",
+  "clefable:mega": "clefablite",
+  "starmie:mega": "starminite",
+  "dragonite:mega": "dragoninite",
 };
 
 /** Keyed by `${baseSpeciesName}:${kind}`, e.g. "venusaur:mega", "charizard:mega_x" — values are item slugs, e.g. "venusaurite". */

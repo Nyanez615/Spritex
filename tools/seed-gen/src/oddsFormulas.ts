@@ -105,12 +105,21 @@ function masudaRow(game: Game): OddsRow {
   };
 }
 
+// Pre-Gen-4 games that HAVE in-game breeding (so aren't in NO_BREEDING_GAMES)
+// but predate the Masuda Method — the different-language-parent shiny boost
+// was introduced in Generation IV (Diamond/Pearl), confirmed via Bulbapedia's
+// "Masuda Method" article. Breeding a shiny in Gen 2/3 is possible but only at
+// the base rate, so no boosted `masuda` odds row should exist for these games.
+// Found auditing #1-151 (round 26): every breedable species wrongly got
+// masuda rows for gen2_vc/gen3_rs/gen3_e/gen3_frlg.
+const PRE_MASUDA_GAMES: ReadonlySet<Game> = new Set(["gen2_vc", "gen3_rs", "gen3_e", "gen3_frlg"]);
+
 export function buildOddsTable(): OddsRow[] {
   const rows: OddsRow[] = [];
 
   for (const game of ALL_GAMES_EXCEPT_GEN1_AND_GO) {
     rows.push(wildRow(game));
-    if (!NO_BREEDING_GAMES.has(game)) rows.push(masudaRow(game));
+    if (!NO_BREEDING_GAMES.has(game) && !PRE_MASUDA_GAMES.has(game)) rows.push(masudaRow(game));
   }
 
   // Gen4 Pokéradar chaining (DP/Pt only — not HGSS, confirmed no radar there).

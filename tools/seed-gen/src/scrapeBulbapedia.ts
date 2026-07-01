@@ -198,19 +198,6 @@ function resolveAnnotation(
   const qualifierMatch = withoutParen.match(/^(.+?)\s+(?:Forms?|Cloaks?|Variet(?:y|ies)|Sizes?|Flowers?)$/i);
   const namesText = qualifierMatch ? qualifierMatch[1] : withoutParen;
   if (!namesText) return [0]; // not a recognizable annotation at all — treat as the base form
-  // A bolded region/location sub-header — Bulbapedia's own per-region
-  // breakdown convention for Legends: Arceus (and similar) location lists,
-  // e.g. "'''[[Coronet Highlands]]:'''" — always ends with a colon once
-  // rendered, confirmed structurally distinct from every real form
-  // annotation (which never does). Regression test for a real bug found
-  // auditing Hisuian Growlithe/Arcanine/Voltorb: the caller's matchAll
-  // picks up EVERY bold span in a segment, including a region header
-  // sharing a segment with a real "('''Hisuian Form''')" annotation —
-  // without this check, the unmatched region name fell through to the
-  // "unmatched -> form 0" fallback below, wrongly attributing that whole
-  // segment's availability to the Kantonian/default form too, even though
-  // the segment's own text explicitly scoped it to the Hisuian form only.
-  if (namesText.endsWith(":")) return [];
   if (namesText.toLowerCase() === "all") return varieties.map((v) => v.formId); // "All Forms"/"All Sizes"
 
   const names = namesText.split("/").map((n) => {
@@ -237,6 +224,32 @@ function resolveAnnotation(
     }
   }
   return Array.from(formIds);
+}
+
+/**
+ * A bolded region/location sub-header, NOT a form annotation — Bulbapedia's
+ * own per-region breakdown convention for Legends: Arceus (and similar)
+ * location lists bolds each region name, e.g. "'''[[Coronet Highlands]]:'''",
+ * always ending with a colon once rendered (a real form annotation never
+ * does). These must be filtered out of a segment's bold matches BEFORE
+ * deciding whether the segment is form-annotated at all:
+ *
+ * - Round 25 confirmed the leak this prevents: Hisuian Growlithe/Arcanine/
+ *   Voltorb's PLA cell has a region header AND a real "('''Hisuian Form''')"
+ *   annotation in the same segment; treating the region header as an
+ *   (unmatched) annotation made it fall through to the "form 0" fallback,
+ *   wrongly granting the Hisuian-only availability to the Kantonian form too.
+ * - Round 26 confirmed the OPPOSITE regression round 25's first (too-broad)
+ *   fix caused: a segment whose ONLY bold is a region header, with no form
+ *   annotation at all (e.g. Eevee's PLA "'''[[Obsidian Fieldlands]]:'''
+ *   [[Horseshoe Plains]]..." — Eevee's own base-form availability, no
+ *   Kantonian/other split), must be treated as UNANNOTATED (its availability
+ *   belongs to the base form), not resolved to "no form" and dropped. Filtering
+ *   region headers out of `matches` up front makes a region-header-only
+ *   segment land in the unannotated branch, restoring the base-form row.
+ */
+function isRegionSubHeader(boldText: string): boolean {
+  return renderWikitextToPlainText(boldText).trim().endsWith(":");
 }
 
 /**
@@ -295,6 +308,23 @@ const NON_WILD_MARKERS: Array<{ regex: RegExp; category: AcquisitionMethod }> = 
   // parent species is named.
   { regex: /\{\{pkmn\|breeding\|Breed\}\}/i, category: "hatch" },
   { regex: /\[\[Pokémon [Bb]reeding\|Breed\]\]/i, category: "hatch" },
+  // Fossil revival — a static "revive from an item at a lab" acquisition, not
+  // a wild encounter. Confirmed live (round 26, auditing #1-151): Omanyte/
+  // Omastar/Kabuto/Kabutops/Aerodactyl's earliest entries read "Revive from
+  // [[Helix Fossil]]/[[Dome Fossil]]/[[Old Amber]] at the [[Cinnabar Lab|
+  // Pokémon Lab]]" — all `is_wild_encounter=1` before this. "Gift" is the
+  // closest existing category (a one-time, non-wild handout).
+  { regex: /Revive from /i, category: "gift" },
+  // Game Corner prize — coins redeemed for a fixed Pokémon (Abra, Dratini,
+  // Porygon, ...); a static, non-wild acquisition. Confirmed live (round 26):
+  // Porygon's R/B/FRLG/GS/HGSS entries read "[[Celadon Game Corner|Rocket
+  // Game Corner]]" / "[[Celadon Game Corner]]", all mislabeled wild before.
+  { regex: /Game Corner/i, category: "gift" },
+  // Bulbapedia's plain gift template (distinct from the event-Pokémon-catalog
+  // link the first marker above already covers). Confirmed live (round 26):
+  // Aerodactyl's Sun/Moon & USUM entries read "[[Seafolk Village]]
+  // ({{pkmn2|Gift}})".
+  { regex: /\{\{pkmn2\|Gift\}\}/i, category: "gift" },
 ];
 
 /** The matched non-wild category, or undefined if the segment is wild. */
@@ -302,7 +332,27 @@ function nonWildCategory(segmentText: string): AcquisitionMethod | undefined {
   return NON_WILD_MARKERS.find((m) => m.regex.test(segmentText))?.category;
 }
 
+/**
+ * `[[Max Lair]] ([[Dynamax Adventure]])` — a den catch IS grindable for
+ * shininess, but its availability is represented by the dedicated
+ * `dynamax_adventure` method row (derived from the DA roster file in
+ * deriveShinyMethods.ts), never the baseline `wild` row. So an inline DA
+ * mention must not flip a co-located trade/gift/evolution-only form's
+ * baseline row to a "wild encounter" — it carries no acquisition_method of
+ * its own either; the form's real category comes from its other (Trade/gift)
+ * segments. Confirmed bug (round 26, auditing #1-151): Kantonian Weezing
+ * (#110)/Mr. Mime (#122)/Porygon (#137)/Ivysaur (#2), whose only OTHER swsh
+ * source is Trade (or a gift), were mislabeled `is_wild_encounter=true`
+ * because this segment passed the wild default. Already in
+ * NON_CHAINABLE_MARKERS (so it never granted chain methods) — this closes the
+ * matching wildness gap. Note the DA marker is checked here, not added to
+ * NON_WILD_MARKERS, precisely because it must NOT contribute an
+ * acquisition_method category.
+ */
+const DYNAMAX_ADVENTURE_MARKER = /\[\[Max Lair\]\] \(\[\[Dynamax Adventure\]\]\)/i;
+
 function isWildSegment(segmentText: string): boolean {
+  if (DYNAMAX_ADVENTURE_MARKER.test(segmentText)) return false;
   return nonWildCategory(segmentText) === undefined;
 }
 
@@ -502,8 +552,14 @@ function resolveFormIdsAndWildness(
     // matchAll, not match: a segment can carry more than one bold form
     // annotation without a <br> between them (no real example yet, but
     // nothing in the wikitext convention rules it out) — match() alone
-    // would silently process only the first and drop the rest.
-    const matches = [...segment.matchAll(/'''([^']+)'''/g)];
+    // would silently process only the first and drop the rest. Region
+    // sub-headers (e.g. "'''[[Coronet Highlands]]:'''") are filtered out
+    // first — they aren't form annotations, so a segment whose ONLY bold is
+    // a region header is treated as unannotated (its availability applies to
+    // the base form), not resolved to "no form" and dropped — see
+    // isRegionSubHeader's own doc comment for the two rounds of bugs this
+    // exact filtering resolves.
+    const matches = [...segment.matchAll(/'''([^']+)'''/g)].filter((m) => !isRegionSubHeader(m[1]));
     if (matches.length > 0) {
       sawAnnotation = true;
       // A bold-annotated segment whose only non-annotation text is one of

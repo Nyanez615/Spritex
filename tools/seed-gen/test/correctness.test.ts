@@ -834,14 +834,13 @@ test("Alolan Raticate (#20) has real Sun AND Moon (gen7_sm) availability — reg
   assert.equal(alolanWild!.is_wild_encounter, true);
 });
 
-test("Raichu's (#26) Alolan form (form_id 1) has zero Scarlet/Violet rows — its only SV source is \"{{g|HOME}}, [[Poké Portal News]]\" (a one-way transfer plus a one-time event-distribution feature, neither a native shiny-roll-bearing source), and zero rows in Legends: Z-A's wild method despite a real availability fact existing there — its only Z-A source is \"[[In-game trade|Trade]] Kantonian Raichu\" (a wikilink to the differently-titled \"In-game trade\" page, not literally \"[[Trade...\"), which the pre-existing trade regex never matched. Both are real bugs found auditing #18-34", async () => {
+test("Raichu's (#26) Alolan form (form_id 1) has zero Scarlet/Violet rows — its only SV source is \"{{g|HOME}}, [[Poké Portal News]]\" (a one-way transfer plus a one-time event-distribution feature, neither a native shiny-roll-bearing source) — and a real, genuinely WILD Legends: Z-A row (updated in round 26: mapping the \"Mega Dimension\" DLC label, itself a separate real bug fix, surfaced a second Z-A availability fact for Alolan Raichu beyond the trade-only one this test originally asserted against — \"[[Hyperspace Lumiose]] (4★ Electric-type wild zones) ('''All Forms''')\" is a genuine wild encounter covering BOTH Raichu forms, which correctly OR-merges the form's is_wild_encounter to true)", async () => {
   const rows = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
   assert.ok(rows.every((r) => !(r.pokemon_id === 26 && r.form_id === 1 && r.game === "sv")), "expected zero sv rows for Alolan Raichu (HOME/Poké-Portal-News-only)");
 
   const zaRow = rows.find((r) => r.pokemon_id === 26 && r.form_id === 1 && r.game === "legends_za" && r.method === "wild");
   assert.ok(zaRow, "expected a legends_za/wild row for Alolan Raichu");
-  assert.equal(zaRow!.is_wild_encounter, false);
-  assert.equal(zaRow!.acquisition_method, "trade");
+  assert.equal(zaRow!.is_wild_encounter, true, "expected true — the Mega Dimension 'All Forms' wild zone is a real, additional source beyond the trade-only base entry");
 });
 
 test("Sandslash's (#28) Alolan form (form_id 1) gets no Brilliant Pokémon row in SwSh — its only base-game source is Trade and its only Expansion-Pass source is the Max Lair Dynamax Adventure den, neither a tall-grass encounter Brilliant Pokémon can spawn in. Regression test for a real bug found auditing #18-34: \"[[Max Lair]] ([[Dynamax Adventure]])\" mentioned inline in area= text (independent of the separate scrapeDynamaxAdventure.ts roster file, which already derives its own correct dynamax_adventure row) wasn't recognized as non-chainable, the same shape of gap Friend Safari/Grand Underground needed fixing for in an earlier round", async () => {
@@ -1315,4 +1314,80 @@ test("Mega Victreebel (#71) has its real held item, victreebelite — regression
   const megaVictreebel = cosmeticForms.find((f) => f.pokemon_id === 71 && f.kind === "mega")!;
   assert.ok(megaVictreebel, "expected a Mega Victreebel cosmetic_forms row");
   assert.equal(megaVictreebel.mega_stone_item, "victreebelite");
+});
+
+test("Eevee (#133 form 0) has real Legends: Arceus and Legends: Z-A shiny_methods rows — regression test for a real bug: resolveAnnotation's fix for the bold-region-header collision (see the Growlithe/Arcanine/Voltorb test above) was initially too broad — a segment whose ONLY bold text is a region sub-header (no real form annotation at all, e.g. Eevee's own \"'''[[Obsidian Fieldlands]]:''' [[Horseshoe Plains]]...\") was being resolved to zero forms and silently dropped, instead of falling through to the base form the way an unannotated segment normally would. Eevee's own evolutions (Vaporeon/Jolteon/Flareon) kept their rows the whole time since their pages have no such region-header segment, which is why this regression was invisible until directly checking Eevee itself", async () => {
+  const eevee = await methodsFor(133, 0);
+  assert.ok(eevee.some((m) => m.game === "pla"), "expected at least one Legends: Arceus row for Eevee");
+  assert.ok(eevee.some((m) => m.game === "legends_za"), "expected at least one Legends: Z-A row for Eevee");
+});
+
+test("Kantonian Weezing (#110 form 0) and Kantonian Mr. Mime (#122 form 0)'s swsh rows are acquisition_method \"trade\", not wild — regression test for a real, general bug found auditing #101-151: an inline \"[[Max Lair]] ([[Dynamax Adventure]])\" mention sharing a cell with a trade-only form's real availability was flipping that form's baseline wild-ness to true (the marker was already in NON_CHAINABLE_MARKERS, so it never granted chain methods, but nothing excluded it from the wildness check itself) — both species' ONLY other swsh source is Trade, so their swsh row should be non-wild", async () => {
+  for (const [pokemonId, name] of [[110, "Weezing"], [122, "Mr. Mime"]] as const) {
+    const rows = await methodsFor(pokemonId, 0);
+    const swsh = rows.find((m) => m.game === "swsh" && m.method === "wild");
+    assert.ok(swsh, `expected a swsh row for Kantonian ${name}`);
+    assert.equal(swsh!.is_wild_encounter, false, `expected Kantonian ${name}'s swsh row to be non-wild`);
+    assert.equal(swsh!.acquisition_method, "trade");
+  }
+});
+
+test("Fossil Pokémon (Omanyte #138, Aerodactyl #142) are acquisition_method \"gift\", not wild — regression test for a real bug found auditing #137-143: Bulbapedia's \"Revive from [[Helix Fossil]]/[[Old Amber]] at the [[Cinnabar Lab|Pokémon Lab]]\" phrasing wasn't recognized as non-wild, so every fossil species' revival rows across every generation were wrongly is_wild_encounter=true", async () => {
+  const omanyte = await methodsFor(138, 0);
+  const frlg = omanyte.find((m) => m.game === "gen3_frlg" && m.method === "wild");
+  assert.ok(frlg, "expected a gen3_frlg row for Omanyte");
+  assert.equal(frlg!.is_wild_encounter, false);
+  assert.equal(frlg!.acquisition_method, "gift");
+});
+
+test("Aerodactyl (#142)'s Sun/Moon and Ultra Sun/Ultra Moon rows are acquisition_method \"gift\" — regression test for a real bug: Bulbapedia's \"[[Seafolk Village]] ({{pkmn2|Gift}})\" plain-gift template wasn't recognized (distinct from the event-Pokémon-catalog-link marker already handled)", async () => {
+  const aerodactyl = await methodsFor(142, 0);
+  const sm = aerodactyl.find((m) => m.game === "gen7_sm" && m.method === "wild");
+  assert.ok(sm, "expected a gen7_sm row for Aerodactyl");
+  assert.equal(sm!.is_wild_encounter, false);
+  assert.equal(sm!.acquisition_method, "gift");
+});
+
+test("Porygon (#137)'s Game Corner prize rows (gen2_vc, gen4_hgss) are acquisition_method \"gift\", not wild — regression test for a real bug found on Porygon and Abra: Bulbapedia's \"[[Celadon Game Corner]]\"/\"[[Celadon Game Corner|Rocket Game Corner]]\" phrasing (a coin-prize redemption) wasn't recognized as non-wild", async () => {
+  const porygon = await methodsFor(137, 0);
+  const hgss = porygon.find((m) => m.game === "gen4_hgss" && m.method === "wild");
+  assert.ok(hgss, "expected a gen4_hgss row for Porygon");
+  assert.equal(hgss!.is_wild_encounter, false);
+  assert.equal(hgss!.acquisition_method, "gift");
+});
+
+test("Omanyte and Omastar (#138/#139) have real swsh shiny_methods rows — regression test for a real bug: Bulbapedia's version-suffixed \"v=Sword Expansion Pass\"/\"v=Shield Expansion Pass\" labels (used when a species' Expansion Pass encounter differs by version) weren't in BULBAPEDIA_LABEL_TO_GAMES, so parseAvailability's `if (!games) continue;` silently dropped the whole entry, leaving zero swsh rows for either species despite real wild/Max Raid availability", async () => {
+  for (const pokemonId of [138, 139]) {
+    const rows = await methodsFor(pokemonId, 0);
+    assert.ok(rows.some((m) => m.game === "swsh"), `expected at least one swsh row for pokemon_id=${pokemonId}`);
+  }
+});
+
+test("Aerodactyl (#142)'s Legends: Z-A availability includes the real \"Mega Dimension\" wild-zone encounter alongside its fossil-revival gift row — regression test for a real bug: the \"Mega Dimension\" DLC label (Bulbapedia: \"[[Hyperspace Lumiose]] (5★ Rock-type hyperspace wild zones)\") wasn't in BULBAPEDIA_LABEL_TO_GAMES, so this real wild availability was silently dropped even though Aerodactyl's base legends_za fossil-revival row already existed", async () => {
+  const aerodactyl = await methodsFor(142, 0);
+  const za = aerodactyl.filter((m) => m.game === "legends_za" && m.method === "wild");
+  assert.ok(za.some((m) => m.is_wild_encounter === true), "expected a real wild legends_za row from the Mega Dimension zone");
+});
+
+test("No masuda (Masuda Method) shiny_methods rows exist for gen2_vc/gen3_rs/gen3_e/gen3_frlg, even for breedable species — regression test for a real, dataset-wide bug: the Masuda Method was introduced in Generation IV, but buildOddsTable's masuda-row loop only excluded NO_BREEDING_GAMES (no in-game Day Care at all), which doesn't cover \"has breeding but predates Masuda\" — every breedable pre-Gen-4 game was wrongly getting a boosted masuda odds row", async () => {
+  const all = await readOutJson<ShinyMethodRow[]>("shiny-methods.json");
+  const preMasudaGames = ["gen2_vc", "gen3_rs", "gen3_e", "gen3_frlg"];
+  const stray = all.filter((r) => r.method === "masuda" && preMasudaGames.includes(r.game));
+  assert.equal(stray.length, 0, `expected zero masuda rows for pre-Gen-4 games, found ${stray.length}`);
+});
+
+test("Mega Raichu X/Y (#26), Mega Clefable (#36), Mega Starmie (#121), and Mega Dragonite (#149) all have their real held item — regression test for the same PokéAPI-not-yet-indexed gap as Mega Victreebel, confirmed via each species' own Bulbapedia infobox `|mega=`/`|mega2=` field and explicit \"introduced in the Mega Dimension DLC for Legends: Z-A\" text. Mega Raichu attaches to the Kantonian form only (form_id 0) — Bulbapedia is explicit that \"Alolan Raichu cannot Mega Evolve\"", async () => {
+  const cosmeticForms = await readOutJson<CosmeticFormRow[]>("cosmetic-forms.json");
+  const raichuX = cosmeticForms.find((f) => f.pokemon_id === 26 && f.kind === "mega_x")!;
+  const raichuY = cosmeticForms.find((f) => f.pokemon_id === 26 && f.kind === "mega_y")!;
+  assert.equal(raichuX.form_id, 0, "expected Mega Raichu X to attach to the Kantonian form");
+  assert.equal(raichuX.mega_stone_item, "raichunite-x");
+  assert.equal(raichuY.form_id, 0, "expected Mega Raichu Y to attach to the Kantonian form");
+  assert.equal(raichuY.mega_stone_item, "raichunite-y");
+  const clefable = cosmeticForms.find((f) => f.pokemon_id === 36 && f.kind === "mega")!;
+  assert.equal(clefable.mega_stone_item, "clefablite");
+  const starmie = cosmeticForms.find((f) => f.pokemon_id === 121 && f.kind === "mega")!;
+  assert.equal(starmie.mega_stone_item, "starminite");
+  const dragonite = cosmeticForms.find((f) => f.pokemon_id === 149 && f.kind === "mega")!;
+  assert.equal(dragonite.mega_stone_item, "dragoninite");
 });
